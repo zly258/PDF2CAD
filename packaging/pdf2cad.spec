@@ -42,9 +42,8 @@ hiddenimports = [
     "shapely",
     "yaml",
     "pypdfium2",
-    # wxPython GUI（PyInstaller 自带 wx 钩子，这里补齐常被漏掉的子模块）
+    # wxPython GUI（PyInstaller 自带 wx 钩子）
     "wx",
-    "wx.lib.scrolledpanel",
 ]
 
 # ---------------------------------------------------------------- 排除项

@@ -10,7 +10,13 @@
 #
 # 您应已随本程序收到 GNU 通用公共许可证副本；若无，请见
 # <https://www.gnu.org/licenses/>。
-"""纯正 wxPython 极简桌面 GUI：窗口“打印PDF图纸转DXF”，文件列表 + 一键开始转换（参考脚本 §10）。"""
+"""纯正 wxPython 极简桌面 GUI（英文 / 中文双语，默认英文，语言选择持久化记忆）。
+
+语言规则：
+- 默认 English；通过菜单 Language -> 中文（简体） 即时切换并重建界面；
+- 语言选择写入 `~/.pdf2cad/gui.json`，下次启动自动恢复上次选择。
+"""
+import json
 import os
 import sys
 import threading
@@ -20,39 +26,293 @@ from .convert_api import convert_any_to_dxf, EngineConfig
 from ..version import __version__, __copyright__
 
 
-GUI_TITLE = "打印PDF图纸转DXF"
-SUPPORTED_EXTS = (".pdf", ".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff")
+# ==============================================================================
+# 多语言状态与持久化（默认英文，切换后记住）
+# ==============================================================================
 
-OCR_MODE_LABELS = {
-    "rapidocr": "RapidOCR (轻量极速)",
-    "paddleocr": "百度 PaddleOCR (高精度)",
-    "llm": "LLM 视觉大模型 API",
+_STATE = {"lang": "en"}
+CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".pdf2cad")
+CONFIG_PATH = os.path.join(CONFIG_DIR, "gui.json")
+
+STR = {
+    "en": {
+        "title": "Print PDF Drawings to DXF",
+        "menu_file": "File(&F)",
+        "menu_ocr": "OCR Config(&O)",
+        "menu_help": "Help(&H)",
+        "menu_lang": "Language(&G)",
+        "lang_en": "English",
+        "lang_zh": "中文（简体）",
+        "add_files": "Add &Files...\tCtrl+O",
+        "add_files_help": "Add one or more PDF/image drawings to the list",
+        "add_folder": "Add &Folder...\tCtrl+D",
+        "add_folder_help": "Scan a folder and add every drawing in it",
+        "remove_sel": "&Remove Selected\tDel",
+        "remove_sel_help": "Remove the selected drawings from the list",
+        "clear_list": "&Clear List",
+        "clear_list_help": "Clear the file list",
+        "exit": "E&xit\tCtrl+Q",
+        "exit_help": "Quit the program",
+        "ocr_rapid": "RapidOCR — Lightweight && Fast(&R)",
+        "ocr_paddle": "Baidu PaddleOCR — High Accuracy(&P)",
+        "ocr_llm": "LLM Vision API(&L)",
+        "ocr_settings": "OCR / Recognition Settings(&S)...\tCtrl+P",
+        "ocr_settings_help": "Configure RapidOCR / Baidu PaddleOCR / LLM endpoint and key",
+        "usage": "&Usage Guide\tF1",
+        "usage_help": "Show the quick guide",
+        "about": "&About",
+        "about_help": "About this program and its copyright",
+        "btn_add": "Add Files...",
+        "btn_add_dir": "Add Folder...",
+        "btn_remove": "Remove Selected",
+        "btn_clear": "Clear List",
+        "btn_open_dir": "Open Folder",
+        "btn_start": "Start Conversion",
+        "col0": "#",
+        "col1": "Drawing File",
+        "col2": "Source Folder",
+        "col3": "Status / Generated DXF (batch timestamp)",
+        "ready": "Ready — click \"Add Files...\" or drag drawings into the list",
+        "statusbar_right": "OCR: {0}  |  v{1}  |  {2}",
+        "switched_ocr": "OCR engine switched to: {0}",
+        "updated_ocr": "OCR configuration updated: {0}",
+        "list_total": "List has {0} file(s) ({1} added this time)",
+        "removed": "Removed {0} item(s), {1} file(s) remain in the list",
+        "cleared": "List cleared",
+        "pending": "Pending",
+        "converting": "Converting...",
+        "done_row": "Done -> {0}",
+        "failed_row": "Failed: {0}",
+        "dlg_add_files": "Add drawing files (single or multi-select)",
+        "wildcard": ("PDF and image drawings (*.pdf;*.jpg;*.jpeg;*.png;*.bmp;*.tif;*.tiff)"
+                     "|*.pdf;*.jpg;*.jpeg;*.png;*.bmp;*.tif;*.tiff|All files (*.*)|*.*"),
+        "dlg_add_folder": "Choose a folder containing drawings",
+        "msg_warn_title": "Notice",
+        "msg_no_files": "No supported PDF or image drawings found in the selected folder!",
+        "msg_need_files": "Please click \"Add Files...\" or drag drawings into the list first!",
+        "msg_scale_invalid": "Scale must be a number (or leave it empty for automatic 1:1)!",
+        "msg_lang_busy": "A conversion is running — please wait until it finishes before switching the language.",
+        "log_batch": "=== Conversion batch [{0}] started ({1} file(s), OCR={2}) ===",
+        "status_converting": "Converting [{0}/{1}]: {2}",
+        "log_ok": "[{0}/{1}] OK: {2} (dimensions={3}, blocks={4}, circles={5}, arcs={6})",
+        "log_fail": "[{0}/{1}] FAILED ({2}): {3}",
+        "done_summary": "Conversion finished: {0}/{1} file(s) OK (timestamp suffix _{2}.dxf)",
+        "dlg_done_title": "Conversion finished",
+        "dlg_done": "Conversion finished!\nOK: {0} / {1} file(s)\nBatch timestamp suffix: _{2}.dxf",
+        "dlg_ocr_title": "OCR / Recognition Settings",
+        "box_engine": " Select OCR engine ",
+        "box_llm": " LLM endpoint & drawing scale ",
+        "lbl_url": "LLM endpoint URL:",
+        "lbl_model": "LLM model name:",
+        "lbl_key": "LLM API key:",
+        "lbl_scale": "Scale (empty = auto 1:1):",
+        "btn_ok": "Save",
+        "btn_cancel": "Cancel",
+        "about_title": "About - {0}",
+        "usage_title": "Usage Guide",
+        "ocr_label_rapidocr": "RapidOCR (lightweight & fast)",
+        "ocr_label_paddleocr": "Baidu PaddleOCR (high accuracy)",
+        "ocr_label_llm": "LLM vision API",
+    },
+    "zh": {
+        "title": "打印PDF图纸转DXF",
+        "menu_file": "文件(&F)",
+        "menu_ocr": "OCR配置(&O)",
+        "menu_help": "帮助(&H)",
+        "menu_lang": "语言(&G)",
+        "lang_en": "English",
+        "lang_zh": "中文（简体）",
+        "add_files": "添加文件(&A)...\tCtrl+O",
+        "add_files_help": "添加单张或多张 PDF/图像图纸到列表",
+        "add_folder": "添加文件夹(&D)...\tCtrl+D",
+        "add_folder_help": "扫描文件夹并将全部图纸加入列表",
+        "remove_sel": "移除选中(&R)\tDel",
+        "remove_sel_help": "从列表中移除选中的图纸",
+        "clear_list": "清空列表(&C)",
+        "clear_list_help": "清空待转换文件列表",
+        "exit": "退出(&X)\tCtrl+Q",
+        "exit_help": "关闭程序",
+        "ocr_rapid": "RapidOCR — 轻量极速(&R)",
+        "ocr_paddle": "百度 PaddleOCR — 高精度(&P)",
+        "ocr_llm": "LLM 视觉大模型 API(&L)",
+        "ocr_settings": "OCR 与识别参数设置(&S)...\tCtrl+P",
+        "ocr_settings_help": "配置 RapidOCR / 百度 PaddleOCR / LLM 接口地址与秘钥",
+        "usage": "使用说明(&U)\tF1",
+        "usage_help": "查看操作说明",
+        "about": "关于(&A)",
+        "about_help": "查看软件说明与版权信息",
+        "btn_add": "添加文件...",
+        "btn_add_dir": "添加文件夹...",
+        "btn_remove": "移除选中",
+        "btn_clear": "清空列表",
+        "btn_open_dir": "打开所在目录",
+        "btn_start": "开始转换",
+        "col0": "序号",
+        "col1": "图纸文件名",
+        "col2": "源文件目录",
+        "col3": "状态 / 生成 DXF 文件（统一时间后缀）",
+        "ready": "就绪 — 请点击“添加文件”或直接拖拽图纸到列表中",
+        "statusbar_right": "OCR: {0}  |  v{1}  |  {2}",
+        "switched_ocr": "已切换 OCR 引擎为：{0}",
+        "updated_ocr": "已更新 OCR 配置：{0}",
+        "list_total": "列表共有 {0} 个图纸文件（本次新增 {1} 个）",
+        "removed": "已移除 {0} 项，当前列表剩余 {1} 个文件",
+        "cleared": "列表已清空",
+        "pending": "待转换",
+        "converting": "正在转换...",
+        "done_row": "已完成 -> {0}",
+        "failed_row": "失败: {0}",
+        "dlg_add_files": "添加图纸文件（可单选或多选）",
+        "wildcard": "PDF 与图像图纸 (*.pdf;*.jpg;*.jpeg;*.png;*.bmp;*.tif;*.tiff)|*.pdf;*.jpg;*.jpeg;*.png;*.bmp;*.tif;*.tiff|所有文件 (*.*)|*.*",
+        "dlg_add_folder": "选择包含图纸的文件夹",
+        "msg_warn_title": "提示",
+        "msg_no_files": "所选文件夹下未找到支持的 PDF 或图像图纸！",
+        "msg_need_files": "请先点击“添加文件”或拖拽图纸到列表中！",
+        "msg_scale_invalid": "比例系数必须为数字（或留空自动按 1:1 计算）！",
+        "msg_lang_busy": "正在转换图纸，请等待转换完成后再切换语言。",
+        "log_batch": "=== 开始转换批次 [{0}]（共 {1} 个文件，OCR={2}） ===",
+        "status_converting": "正在转换 [{0}/{1}]: {2}",
+        "log_ok": "[{0}/{1}] 成功: {2} (尺寸标注={3}, 块引用={4}, 圆={5}, 圆弧={6})",
+        "log_fail": "[{0}/{1}] 失败 ({2}): {3}",
+        "done_summary": "转换完成：成功 {0}/{1} 个文件（时间后缀 _{2}.dxf）",
+        "dlg_done_title": "转换完成",
+        "dlg_done": "转换完成！\n成功：{0} / {1} 个文件\n统一时间后缀：_{2}.dxf",
+        "dlg_ocr_title": "OCR 与识别参数配置",
+        "box_engine": " 选择 OCR 识别引擎 ",
+        "box_llm": " LLM 接口与图纸比例参数 ",
+        "lbl_url": "LLM 接口地址：",
+        "lbl_model": "LLM 模型名称：",
+        "lbl_key": "LLM 接口秘钥：",
+        "lbl_scale": "比例系数 (留空自动1:1)：",
+        "btn_ok": "保存设置",
+        "btn_cancel": "取消",
+        "about_title": "关于 - {0}",
+        "usage_title": "使用说明",
+        "ocr_label_rapidocr": "RapidOCR (轻量极速)",
+        "ocr_label_paddleocr": "百度 PaddleOCR (高精度)",
+        "ocr_label_llm": "LLM 视觉大模型 API",
+    },
 }
 
-ABOUT_TEXT = (
-    f"软件名称：{GUI_TITLE}\n"
-    f"当前版本：v{__version__}\n"
-    f"版权所有：{__copyright__}\n\n"
-    "【核心功能说明】\n"
-    "1. 通用零硬编码解析：自动将打印/导出的矢量 PDF 及扫描图纸转换为标准可编辑 CAD (DXF)；\n"
-    "2. 原生标注与特殊元素识别：智能还原尺寸标注 (DIMENSION)、焊合引出线 (LEADER)、剖切符号、\n"
-    "   表面粗糙度、形位公差、基准符号、标高/坡度、技术要求块、工程表格与标题栏 (TABLE)、\n"
-    "   剖面填充区域块 (HATCH_REGION) 以及重复符号块定义归一化复用 (BLOCK / INSERT)；\n"
-    "3. 几何轮廓高精度重构：自动还原真圆 (CIRCLE)、圆弧/倒圆角 (ARC)、SVD 微线段中心线/圆弧重构；\n"
-    "4. 全自动防乱码：内置 ANSI_936 (GBK) 与 txt.shx + gbcbig.shx 国标双字库绑定，中文与工程符号零乱码；\n"
-    "5. 极简统一转换：支持单张或多张图纸统一列表管理，生成 DXF 自动带批次统一时间戳后缀。"
-)
 
-USAGE_TEXT = (
-    "【快速使用说明】\n\n"
-    "1. 添加图纸：点击主界面“添加文件”（支持单选或框选多个 PDF/图片）或“添加文件夹”，也可直接将文件/文件夹拖拽到文件列表中。\n"
-    "2. 开始转换：无需区分单个或批量，直接点击“开始转换”，程序会依次转换列表中的全部图纸，\n"
-    "   并在源图纸同目录下生成带统一批次时间戳后缀的 DXF 文件（例如：`轴承座_20261024_214500.dxf`）。\n"
-    "3. OCR 配置（顶部菜单【OCR配置】）：\n"
-    "   - RapidOCR（默认推荐）：基于 ONNXRuntime 的轻量级高速离线识别；\n"
-    "   - 百度 PaddleOCR：百度飞桨 PP-OCR 引擎，适合复杂单线字与扫描图纸；\n"
-    "   - LLM 视觉大模型：支持配置接口地址 URL、模型名称 Model 与秘钥 API Key。"
-)
+def _t(key):
+    """取当前语言的文案；缺键时回落英文，再缺则返回键名。"""
+    return STR.get(_STATE["lang"], STR["en"]).get(key, STR["en"].get(key, key))
+
+
+def current_language():
+    """当前界面语言（'en' / 'zh'）。"""
+    return _STATE["lang"]
+
+
+def load_gui_config():
+    """读取 GUI 持久化配置（不存在或损坏时返回空 dict，保持默认英文）。"""
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
+
+
+def save_gui_config(data):
+    """写入 GUI 持久化配置；失败静默（不影响转换功能）。"""
+    try:
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+        with open(CONFIG_PATH, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def apply_saved_language():
+    """启动时恢复上次语言；无记录或值非法则保持默认英文。"""
+    saved = load_gui_config().get("language")
+    _STATE["lang"] = saved if saved in ("en", "zh") else "en"
+    return _STATE["lang"]
+
+
+def set_language(lang):
+    """切换语言并持久化（下次启动自动恢复）。"""
+    if lang not in ("en", "zh"):
+        return
+    _STATE["lang"] = lang
+    cfg = load_gui_config()
+    cfg["language"] = lang
+    save_gui_config(cfg)
+
+
+def ocr_mode_label(mode):
+    """OCR 引擎的本地化显示名。"""
+    return _t("ocr_label_" + str(mode)) if "ocr_label_" + str(mode) in STR.get(_STATE["lang"], {}) else str(mode)
+
+
+def about_text():
+    """关于对话框文案（跟随当前语言）。"""
+    if _STATE["lang"] == "zh":
+        return (
+            f"软件名称：{_t('title')}\n"
+            f"当前版本：v{__version__}\n"
+            f"版权所有：{__copyright__}\n\n"
+            "【核心功能说明】\n"
+            "1. 通用零硬编码解析：自动将打印/导出的矢量 PDF 及扫描图纸转换为标准可编辑 CAD (DXF)；\n"
+            "2. 原生标注与特殊元素识别：智能还原尺寸标注 (DIMENSION)、焊合引出线 (LEADER)、剖切符号、\n"
+            "   表面粗糙度、形位公差、基准符号、标高/坡度、技术要求块、工程表格与标题栏 (TABLE)、\n"
+            "   剖面填充区域块 (HATCH_REGION) 以及重复符号块定义归一化复用 (BLOCK / INSERT)；\n"
+            "3. 几何轮廓高精度重构：自动还原真圆 (CIRCLE)、圆弧/倒圆角 (ARC)、SVD 微线段中心线/圆弧重构；\n"
+            "4. 全自动防乱码：内置 ANSI_936 (GBK) 与 txt.shx + gbcbig.shx 国标双字库绑定，中文与工程符号零乱码；\n"
+            "5. 极简统一转换：支持单张或多张图纸统一列表管理，生成 DXF 自动带批次统一时间戳后缀。"
+        )
+    return (
+        f"Software: {_t('title')}\n"
+        f"Version: v{__version__}\n"
+        f"Copyright: {__copyright__}\n\n"
+        "[Key Features]\n"
+        "1. Universal zero-hardcoding parsing: converts printed/exported vector PDFs and scanned\n"
+        "   drawings into standard editable CAD (DXF);\n"
+        "2. Native annotations & special elements: dimensions (DIMENSION), weld leaders (LEADER),\n"
+        "   section marks, surface roughness, geometric tolerance frames (FCF), datums, elevation /\n"
+        "   slope marks, technical notes, engineering tables and title blocks (TABLE), hatch regions\n"
+        "   (HATCH_REGION), plus normalized BLOCK / INSERT reuse of repeated symbols;\n"
+        "3. High-accuracy geometry rebuild: true circles (CIRCLE), arcs / fillets (ARC), SVD\n"
+        "   micro-segment centre-line and arc reconstruction;\n"
+        "4. Zero-garbage encoding: ANSI_936 (GBK) with txt.shx + gbcbig.shx national fonts bound,\n"
+        "   Chinese and engineering symbols are never garbled;\n"
+        "5. Minimal unified workflow: single or batch drawings in one list; generated DXF files share\n"
+        "   a batch timestamp suffix automatically."
+    )
+
+
+def usage_text():
+    """使用说明对话框文案（跟随当前语言）。"""
+    if _STATE["lang"] == "zh":
+        return (
+            "【快速使用说明】\n\n"
+            "1. 添加图纸：点击主界面“添加文件”（支持单选或框选多个 PDF/图片）或“添加文件夹”，也可直接将文件/文件夹拖拽到文件列表中。\n"
+            "2. 开始转换：无需区分单个或批量，直接点击“开始转换”，程序会依次转换列表中的全部图纸，\n"
+            "   并在源图纸同目录下生成带统一批次时间戳后缀的 DXF 文件（例如：`轴承座_20261024_214500.dxf`）。\n"
+            "3. OCR 配置（顶部菜单【OCR配置】）：\n"
+            "   - RapidOCR（默认推荐）：基于 ONNXRuntime 的轻量级高速离线识别；\n"
+            "   - 百度 PaddleOCR：百度飞桨 PP-OCR 引擎，适合复杂单线字与扫描图纸；\n"
+            "   - LLM 视觉大模型：支持配置接口地址 URL、模型名称 Model 与秘钥 API Key。"
+        )
+    return (
+        "[Quick Guide]\n\n"
+        "1. Add drawings: click \"Add Files...\" (single or multi-select PDF/images) or \"Add Folder...\",\n"
+        "   or drag files / folders straight into the list.\n"
+        "2. Convert: no single/batch switch — just click \"Start Conversion\". Every drawing in the list\n"
+        "   is converted in order, producing DXF files with a shared batch timestamp suffix next to the\n"
+        "   sources (e.g. `bearing_20261024_214500.dxf`).\n"
+        "3. OCR configuration (menu \"OCR Config\"):\n"
+        "   - RapidOCR (default): lightweight, fast, fully offline via ONNXRuntime;\n"
+        "   - Baidu PaddleOCR: PP-OCR engine, good for complex single-stroke glyphs and scanned sheets;\n"
+        "   - LLM vision API: configure the endpoint URL, model name and API key."
+    )
+
+
+SUPPORTED_EXTS = (".pdf", ".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff")
 
 
 def _enable_windows_high_dpi():
@@ -111,12 +371,13 @@ def _open_folder_in_explorer(path_str):
 
 
 def launch():
-    """启动纯正 wxPython 极简桌面界面（主界面：文件列表 + 添加文件 + 开始转换；菜单栏：文件 / OCR配置 / 帮助->关于）。"""
+    """启动 wxPython 极简桌面界面（主界面：文件列表 + 一键开始转换；菜单：文件 / OCR配置 / 语言 / 帮助）。"""
     try:
         import wx
     except ImportError as exc:
         raise RuntimeError("当前环境未安装 wxPython，请先执行 `pip install wxPython -f https://extras.wxpython.org/wxPython/4.x/` 后再启动 GUI。") from exc
 
+    apply_saved_language()
     _enable_windows_high_dpi()
     app = wx.App(False)
 
@@ -140,7 +401,7 @@ def launch():
     class OcrConfigDialog(wx.Dialog):
         """菜单【OCR配置】弹出的配置对话框（支持 RapidOCR / 百度 PaddleOCR / LLM 及比例设置）。"""
         def __init__(self, parent, cfg: EngineConfig):
-            super().__init__(parent, title="OCR 与识别参数配置", size=(520, 340), style=wx.DEFAULT_DIALOG_STYLE)
+            super().__init__(parent, title=_t("dlg_ocr_title"), size=(560, 340), style=wx.DEFAULT_DIALOG_STYLE)
             self.cfg = cfg
             font_normal = wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, False, "Microsoft YaHei")
             font_bold = wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD, False, "Microsoft YaHei")
@@ -149,14 +410,14 @@ def launch():
             panel = wx.Panel(self)
             vbox = wx.BoxSizer(wx.VERTICAL)
 
-            box_engine = wx.StaticBox(panel, label=" 选择 OCR 识别引擎 ")
+            box_engine = wx.StaticBox(panel, label=_t("box_engine"))
             box_engine.SetFont(font_bold)
             s_engine = wx.StaticBoxSizer(box_engine, wx.VERTICAL)
 
             mode_row = wx.BoxSizer(wx.HORIZONTAL)
-            self.rb_rapid = wx.RadioButton(panel, label="RapidOCR (轻量极速)", style=wx.RB_GROUP)
-            self.rb_paddle = wx.RadioButton(panel, label="百度 PaddleOCR (高精度)")
-            self.rb_llm = wx.RadioButton(panel, label="LLM 视觉大模型 API")
+            self.rb_rapid = wx.RadioButton(panel, label=_t("ocr_rapid"), style=wx.RB_GROUP)
+            self.rb_paddle = wx.RadioButton(panel, label=_t("ocr_paddle"))
+            self.rb_llm = wx.RadioButton(panel, label=_t("ocr_llm"))
             cur_m = cfg.ocr_mode.lower()
             if cur_m in ("paddleocr", "paddle", "builtin_2"):
                 self.rb_paddle.SetValue(True)
@@ -171,7 +432,7 @@ def launch():
             s_engine.Add(mode_row, 0, wx.ALL, 8)
             vbox.Add(s_engine, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 12)
 
-            box_llm = wx.StaticBox(panel, label=" LLM 接口与图纸比例参数 ")
+            box_llm = wx.StaticBox(panel, label=_t("box_llm"))
             box_llm.SetFont(font_bold)
             s_llm = wx.StaticBoxSizer(box_llm, wx.VERTICAL)
 
@@ -184,22 +445,22 @@ def launch():
             sc_val = "" if cfg.user_scale is None else str(cfg.user_scale)
             self.txt_scale = wx.TextCtrl(panel, value=sc_val, size=(150, -1))
 
-            grid.Add(wx.StaticText(panel, label="LLM 接口地址："), 0, wx.ALIGN_CENTER_VERTICAL)
+            grid.Add(wx.StaticText(panel, label=_t("lbl_url")), 0, wx.ALIGN_CENTER_VERTICAL)
             grid.Add(self.txt_url, 1, wx.EXPAND)
-            grid.Add(wx.StaticText(panel, label="LLM 模型名称："), 0, wx.ALIGN_CENTER_VERTICAL)
+            grid.Add(wx.StaticText(panel, label=_t("lbl_model")), 0, wx.ALIGN_CENTER_VERTICAL)
             grid.Add(self.txt_model, 1, wx.EXPAND)
-            grid.Add(wx.StaticText(panel, label="LLM 接口秘钥："), 0, wx.ALIGN_CENTER_VERTICAL)
+            grid.Add(wx.StaticText(panel, label=_t("lbl_key")), 0, wx.ALIGN_CENTER_VERTICAL)
             grid.Add(self.txt_key, 1, wx.EXPAND)
-            grid.Add(wx.StaticText(panel, label="比例系数 (留空自动1:1)："), 0, wx.ALIGN_CENTER_VERTICAL)
+            grid.Add(wx.StaticText(panel, label=_t("lbl_scale")), 0, wx.ALIGN_CENTER_VERTICAL)
             grid.Add(self.txt_scale, 0, wx.ALIGN_LEFT)
 
             s_llm.Add(grid, 1, wx.EXPAND | wx.ALL, 8)
             vbox.Add(s_llm, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 10)
 
             btn_row = wx.BoxSizer(wx.HORIZONTAL)
-            btn_ok = wx.Button(panel, wx.ID_OK, label="保存设置", size=(96, 30))
+            btn_ok = wx.Button(panel, wx.ID_OK, label=_t("btn_ok"), size=(96, 30))
             btn_ok.SetFont(font_bold)
-            btn_cancel = wx.Button(panel, wx.ID_CANCEL, label="取消", size=(86, 30))
+            btn_cancel = wx.Button(panel, wx.ID_CANCEL, label=_t("btn_cancel"), size=(86, 30))
             btn_row.AddStretchSpacer(1)
             btn_row.Add(btn_ok, 0, wx.RIGHT, 8)
             btn_row.Add(btn_cancel, 0)
@@ -225,7 +486,7 @@ def launch():
                 try:
                     self.cfg.user_scale = float(sc_s)
                 except ValueError:
-                    wx.MessageBox("比例系数必须为数字（或留空自动按 1:1 计算）！", "提示", wx.OK | wx.ICON_WARNING, self)
+                    wx.MessageBox(_t("msg_scale_invalid"), _t("msg_warn_title"), wx.OK | wx.ICON_WARNING, self)
                     return False
             else:
                 self.cfg.user_scale = None
@@ -243,57 +504,67 @@ def launch():
 
     class MainFrame(wx.Frame):
         def __init__(self):
-            super().__init__(None, title=GUI_TITLE, size=(780, 540))
-            self.SetMinSize((680, 460))
+            super().__init__(None, title=_t("title"), size=(800, 540))
+            self.SetMinSize((700, 460))
             self.cfg = EngineConfig(ocr_mode="rapidocr")
             self.file_items = []  # list of dicts: {'path': str, 'out_path': str, 'status': str}
+            self._converting = False
 
             font_normal = wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, False, "Microsoft YaHei")
             font_bold = wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD, False, "Microsoft YaHei")
             self.SetFont(font_normal)
 
-            # 1. 顶部菜单栏：文件(F) / OCR配置(O) / 帮助(H) -> 关于(A)
+            # 1. 顶部菜单栏：文件(F) / OCR配置(O) / 语言(G) / 帮助(H) -> 关于(A)
             menubar = wx.MenuBar()
 
             file_menu = wx.Menu()
-            m_add_files = file_menu.Append(wx.ID_OPEN, "添加文件(&A)...	Ctrl+O", "添加单张或多张 PDF/图像图纸到列表")
-            m_add_folder = file_menu.Append(wx.ID_ANY, "添加文件夹(&D)...	Ctrl+D", "扫描文件夹并将全部图纸加入列表")
-            m_remove_sel = file_menu.Append(wx.ID_DELETE, "移除选中(&R)	Del", "从列表中移除选中的图纸")
-            m_clear_list = file_menu.Append(wx.ID_CLEAR, "清空列表(&C)", "清空待转换文件列表")
+            m_add_files = file_menu.Append(wx.ID_OPEN, _t("add_files"), _t("add_files_help"))
+            m_add_folder = file_menu.Append(wx.ID_ANY, _t("add_folder"), _t("add_folder_help"))
+            m_remove_sel = file_menu.Append(wx.ID_DELETE, _t("remove_sel"), _t("remove_sel_help"))
+            m_clear_list = file_menu.Append(wx.ID_CLEAR, _t("clear_list"), _t("clear_list_help"))
             file_menu.AppendSeparator()
-            m_exit = file_menu.Append(wx.ID_EXIT, "退出(&X)	Ctrl+Q", "关闭程序")
+            m_exit = file_menu.Append(wx.ID_EXIT, _t("exit"), _t("exit_help"))
 
             ocr_menu = wx.Menu()
-            self.m_ocr_rapid = ocr_menu.AppendRadioItem(wx.ID_ANY, "RapidOCR — 轻量极速(&R)")
-            self.m_ocr_paddle = ocr_menu.AppendRadioItem(wx.ID_ANY, "百度 PaddleOCR — 高精度(&P)")
-            self.m_ocr_llm = ocr_menu.AppendRadioItem(wx.ID_ANY, "LLM 视觉大模型 API(&L)")
+            self.m_ocr_rapid = ocr_menu.AppendRadioItem(wx.ID_ANY, _t("ocr_rapid"))
+            self.m_ocr_paddle = ocr_menu.AppendRadioItem(wx.ID_ANY, _t("ocr_paddle"))
+            self.m_ocr_llm = ocr_menu.AppendRadioItem(wx.ID_ANY, _t("ocr_llm"))
             self.m_ocr_rapid.Check(True)
             ocr_menu.AppendSeparator()
-            m_ocr_settings = ocr_menu.Append(wx.ID_PREFERENCES, "OCR 与识别参数设置(&S)...	Ctrl+P", "配置 RapidOCR / 百度 PaddleOCR / LLM 接口地址与秘钥")
+            m_ocr_settings = ocr_menu.Append(wx.ID_PREFERENCES, _t("ocr_settings"), _t("ocr_settings_help"))
+
+            lang_menu = wx.Menu()
+            self.m_lang_en = lang_menu.AppendRadioItem(wx.ID_ANY, _t("lang_en"))
+            self.m_lang_zh = lang_menu.AppendRadioItem(wx.ID_ANY, _t("lang_zh"))
+            if _STATE["lang"] == "zh":
+                self.m_lang_zh.Check(True)
+            else:
+                self.m_lang_en.Check(True)
 
             help_menu = wx.Menu()
-            m_usage = help_menu.Append(wx.ID_HELP, "使用说明(&U)	F1", "查看操作说明")
+            m_usage = help_menu.Append(wx.ID_HELP, _t("usage"), _t("usage_help"))
             help_menu.AppendSeparator()
-            m_about = help_menu.Append(wx.ID_ABOUT, "关于(&A)", "查看软件说明与版权信息")
+            m_about = help_menu.Append(wx.ID_ABOUT, _t("about"), _t("about_help"))
 
-            menubar.Append(file_menu, "文件(&F)")
-            menubar.Append(ocr_menu, "OCR配置(&O)")
-            menubar.Append(help_menu, "帮助(&H)")
+            menubar.Append(file_menu, _t("menu_file"))
+            menubar.Append(ocr_menu, _t("menu_ocr"))
+            menubar.Append(lang_menu, _t("menu_lang"))
+            menubar.Append(help_menu, _t("menu_help"))
             self.SetMenuBar(menubar)
 
-            # 2. 极简主界面：顶部工具栏 + 中部文件列表 + 底部进度条与状态栏
+            # 2. 极简主界面：顶部工具栏 + 中部文件列表 + 底部进度条与日志区
             panel = wx.Panel(self)
             panel.SetBackgroundColour(wx.Colour(246, 248, 250))
             main_sizer = wx.BoxSizer(wx.VERTICAL)
 
             # 顶部操作栏
             top_bar = wx.BoxSizer(wx.HORIZONTAL)
-            self.btn_add = wx.Button(panel, label="添加文件...", size=(104, 34))
-            self.btn_add_dir = wx.Button(panel, label="添加文件夹...", size=(108, 34))
-            self.btn_remove = wx.Button(panel, label="移除选中", size=(86, 34))
-            self.btn_clear = wx.Button(panel, label="清空列表", size=(86, 34))
-            self.btn_open_dir = wx.Button(panel, label="打开所在目录", size=(106, 34))
-            self.btn_start = wx.Button(panel, label="开始转换", size=(132, 34))
+            self.btn_add = wx.Button(panel, label=_t("btn_add"), size=(110, 34))
+            self.btn_add_dir = wx.Button(panel, label=_t("btn_add_dir"), size=(116, 34))
+            self.btn_remove = wx.Button(panel, label=_t("btn_remove"), size=(118, 34))
+            self.btn_clear = wx.Button(panel, label=_t("btn_clear"), size=(96, 34))
+            self.btn_open_dir = wx.Button(panel, label=_t("btn_open_dir"), size=(112, 34))
+            self.btn_start = wx.Button(panel, label=_t("btn_start"), size=(136, 34))
             self.btn_start.SetFont(font_bold)
 
             top_bar.Add(self.btn_add, 0, wx.RIGHT, 6)
@@ -307,14 +578,14 @@ def launch():
 
             # 中部文件列表（支持单选/多选/拖拽文件，不区分单个或批量）
             self.list_ctrl = wx.ListCtrl(panel, style=wx.LC_REPORT | wx.BORDER_SUNKEN)
-            self.list_ctrl.InsertColumn(0, "序号", width=52)
-            self.list_ctrl.InsertColumn(1, "图纸文件名", width=185)
-            self.list_ctrl.InsertColumn(2, "源文件目录", width=245)
-            self.list_ctrl.InsertColumn(3, "状态 / 生成 DXF 文件（统一时间后缀）", width=260)
+            self.list_ctrl.InsertColumn(0, _t("col0"), width=52)
+            self.list_ctrl.InsertColumn(1, _t("col1"), width=200)
+            self.list_ctrl.InsertColumn(2, _t("col2"), width=225)
+            self.list_ctrl.InsertColumn(3, _t("col3"), width=225)
             self.list_ctrl.SetDropTarget(FileDropTarget(self))
             main_sizer.Add(self.list_ctrl, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 10)
 
-            # 进度条与精简日志区
+            # 进度条与日志区
             prog_row = wx.BoxSizer(wx.HORIZONTAL)
             self.gauge = wx.Gauge(panel, range=100, style=wx.GA_HORIZONTAL | wx.GA_SMOOTH)
             prog_row.Add(self.gauge, 1, wx.EXPAND)
@@ -328,7 +599,7 @@ def launch():
             # 底部状态栏
             self.statusbar = self.CreateStatusBar(2)
             self.statusbar.SetStatusWidths([-3, -2])
-            self._refresh_statusbar("就绪 — 请点击“添加文件”或直接拖拽图纸到列表中")
+            self._refresh_statusbar(_t("ready"))
 
             # 绑定事件
             self.Bind(wx.EVT_MENU, self.on_add_files, m_add_files)
@@ -342,8 +613,11 @@ def launch():
             self.Bind(wx.EVT_MENU, lambda e: self.set_quick_ocr_mode("llm"), self.m_ocr_llm)
             self.Bind(wx.EVT_MENU, self.on_open_ocr_config, m_ocr_settings)
 
-            self.Bind(wx.EVT_MENU, lambda e: wx.MessageBox(USAGE_TEXT, "使用说明", wx.OK | wx.ICON_INFORMATION, self), m_usage)
-            self.Bind(wx.EVT_MENU, lambda e: wx.MessageBox(ABOUT_TEXT, f"关于 - {GUI_TITLE}", wx.OK | wx.ICON_INFORMATION, self), m_about)
+            self.Bind(wx.EVT_MENU, self.on_switch_language, self.m_lang_en)
+            self.Bind(wx.EVT_MENU, self.on_switch_language, self.m_lang_zh)
+
+            self.Bind(wx.EVT_MENU, lambda e: wx.MessageBox(usage_text(), _t("usage_title"), wx.OK | wx.ICON_INFORMATION, self), m_usage)
+            self.Bind(wx.EVT_MENU, lambda e: wx.MessageBox(about_text(), _t("about_title").format(_t("title")), wx.OK | wx.ICON_INFORMATION, self), m_about)
 
             self.btn_add.Bind(wx.EVT_BUTTON, self.on_add_files)
             self.btn_add_dir.Bind(wx.EVT_BUTTON, self.on_add_folder)
@@ -355,15 +629,37 @@ def launch():
 
             self.Centre()
 
+        # ---------------- 语言切换（立即重建界面，选择持久化） ----------------
+        def on_switch_language(self, event):
+            new_lang = "zh" if event.GetEventObject() is self.m_lang_zh else "en"
+            if new_lang == _STATE["lang"]:
+                return
+            if self._converting:
+                # 转换进行中禁止重建窗口，避免工作线程 CallAfter 悬挂到已销毁窗口
+                wx.MessageBox(_t("msg_lang_busy"), _t("msg_warn_title"), wx.OK | wx.ICON_WARNING, self)
+                if _STATE["lang"] == "zh":
+                    self.m_lang_zh.Check(True)
+                else:
+                    self.m_lang_en.Check(True)
+                return
+            set_language(new_lang)  # 写入 ~/.pdf2cad/gui.json，下次启动自动恢复
+            wx.CallAfter(self._reopen_with_new_language)
+
+        def _reopen_with_new_language(self):
+            new_frame = MainFrame()
+            new_frame.Show()
+            self.Destroy()
+
+        # ---------------- 状态栏与 OCR 快捷切换 ----------------
         def _refresh_statusbar(self, left_msg=None):
             if left_msg is not None:
                 self.statusbar.SetStatusText(left_msg, 0)
-            ocr_label = OCR_MODE_LABELS.get(self.cfg.ocr_mode, self.cfg.ocr_mode)
-            self.statusbar.SetStatusText(f"OCR: {ocr_label}  |  v{__version__}  |  {__copyright__}", 1)
+            ocr_label = ocr_mode_label(self.cfg.ocr_mode)
+            self.statusbar.SetStatusText(_t("statusbar_right").format(ocr_label, __version__, __copyright__), 1)
 
         def set_quick_ocr_mode(self, mode_str):
             self.cfg.ocr_mode = mode_str
-            self._refresh_statusbar(f"已切换 OCR 引擎为：{OCR_MODE_LABELS.get(mode_str, mode_str)}")
+            self._refresh_statusbar(_t("switched_ocr").format(ocr_mode_label(mode_str)))
             if mode_str == "llm":
                 self.on_open_ocr_config(None)
 
@@ -378,8 +674,9 @@ def launch():
                             self.m_ocr_llm.Check(True)
                         else:
                             self.m_ocr_rapid.Check(True)
-                        self._refresh_statusbar(f"已更新 OCR 配置：{OCR_MODE_LABELS.get(m, m)}")
+                        self._refresh_statusbar(_t("updated_ocr").format(ocr_mode_label(m)))
 
+        # ---------------- 文件列表操作 ----------------
         def add_files_to_list(self, paths):
             existing = {it['path'] for it in self.file_items}
             added_cnt = 0
@@ -387,10 +684,10 @@ def launch():
                 ap = os.path.abspath(p)
                 if os.path.isfile(ap) and ap not in existing:
                     existing.add(ap)
-                    self.file_items.append({'path': ap, 'out_path': '', 'status': '待转换'})
+                    self.file_items.append({'path': ap, 'out_path': '', 'status': _t("pending")})
                     added_cnt += 1
             self._rebuild_list_ui()
-            self._refresh_statusbar(f"列表共有 {len(self.file_items)} 个图纸文件（本次新增 {added_cnt} 个）")
+            self._refresh_statusbar(_t("list_total").format(len(self.file_items), added_cnt))
 
         def _rebuild_list_ui(self):
             self.list_ctrl.DeleteAllItems()
@@ -401,17 +698,16 @@ def launch():
                 self.list_ctrl.SetItem(row, 3, it['status'])
 
         def on_add_files(self, event):
-            wildcard = "PDF 与图像图纸 (*.pdf;*.jpg;*.jpeg;*.png;*.bmp;*.tif;*.tiff)|*.pdf;*.jpg;*.jpeg;*.png;*.bmp;*.tif;*.tiff|所有文件 (*.*)|*.*"
-            with wx.FileDialog(self, "添加图纸文件（可单选或多选）", wildcard=wildcard, style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST | wx.FD_MULTIPLE) as dlg:
+            with wx.FileDialog(self, _t("dlg_add_files"), wildcard=_t("wildcard"), style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST | wx.FD_MULTIPLE) as dlg:
                 if dlg.ShowModal() == wx.ID_OK:
                     self.add_files_to_list(dlg.GetPaths())
 
         def on_add_folder(self, event):
-            with wx.DirDialog(self, "选择包含图纸的文件夹", style=wx.DD_DEFAULT_STYLE) as dlg:
+            with wx.DirDialog(self, _t("dlg_add_folder"), style=wx.DD_DEFAULT_STYLE) as dlg:
                 if dlg.ShowModal() == wx.ID_OK:
                     files = _collect_input_files_from_folder(dlg.GetPath())
                     if not files:
-                        wx.MessageBox("所选文件夹下未找到支持的 PDF 或图像图纸！", "提示", wx.OK | wx.ICON_WARNING, self)
+                        wx.MessageBox(_t("msg_no_files"), _t("msg_warn_title"), wx.OK | wx.ICON_WARNING, self)
                         return
                     self.add_files_to_list(files)
 
@@ -427,13 +723,13 @@ def launch():
                 if 0 <= i < len(self.file_items):
                     self.file_items.pop(i)
             self._rebuild_list_ui()
-            self._refresh_statusbar(f"已移除 {len(sel_indices)} 项，当前列表剩余 {len(self.file_items)} 个文件")
+            self._refresh_statusbar(_t("removed").format(len(sel_indices), len(self.file_items)))
 
         def on_clear_list(self, event):
             self.file_items.clear()
             self.list_ctrl.DeleteAllItems()
             self.gauge.SetValue(0)
-            self._refresh_statusbar("列表已清空")
+            self._refresh_statusbar(_t("cleared"))
 
         def on_open_selected_dir(self, event):
             idx = self.list_ctrl.GetFirstSelected()
@@ -444,6 +740,7 @@ def launch():
                 target = self.file_items[0].get('out_path') or self.file_items[0]['path']
                 _open_folder_in_explorer(target)
 
+        # ---------------- 转换执行 ----------------
         def append_log(self, msg):
             self.txt_log.AppendText(msg + "\n")
 
@@ -455,11 +752,20 @@ def launch():
                 if row_idx < self.list_ctrl.GetItemCount():
                     self.list_ctrl.SetItem(row_idx, 3, status_text)
 
+        def _re_enable_buttons(self):
+            self._converting = False
+            self.btn_start.Enable(True)
+            self.btn_add.Enable(True)
+            self.btn_add_dir.Enable(True)
+            self.btn_remove.Enable(True)
+            self.btn_clear.Enable(True)
+
         def on_start_convert(self, event):
             if not self.file_items:
-                wx.MessageBox("请先点击“添加文件”或拖拽图纸到列表中！", "提示", wx.OK | wx.ICON_WARNING, self)
+                wx.MessageBox(_t("msg_need_files"), _t("msg_warn_title"), wx.OK | wx.ICON_WARNING, self)
                 return
 
+            self._converting = True
             self.btn_start.Enable(False)
             self.btn_add.Enable(False)
             self.btn_add_dir.Enable(False)
@@ -481,42 +787,42 @@ def launch():
             def worker():
                 ok_cnt = 0
                 total_n = len(tasks)
-                wx.CallAfter(self.append_log, f"=== 开始转换批次 [{batch_ts}]（共 {total_n} 个文件，OCR={cfg_snapshot.ocr_mode}） ===")
+                wx.CallAfter(self.append_log, _t("log_batch").format(batch_ts, total_n, cfg_snapshot.ocr_mode))
                 try:
                     for seq_i, (row_idx, src_path) in enumerate(tasks, start=1):
                         out_dxf = generate_timestamped_dxf_path(src_path, batch_ts=batch_ts)
                         out_name = os.path.basename(out_dxf)
-                        wx.CallAfter(self.update_row_status, row_idx, "正在转换...")
-                        wx.CallAfter(self._refresh_statusbar, f"正在转换 [{seq_i}/{total_n}]: {os.path.basename(src_path)}")
+                        wx.CallAfter(self.update_row_status, row_idx, _t("converting"))
+                        wx.CallAfter(self._refresh_statusbar, _t("status_converting").format(seq_i, total_n, os.path.basename(src_path)))
                         try:
                             st = convert_any_to_dxf(src_path, out_dxf, config=cfg_snapshot)
                             ok_cnt += 1
-                            wx.CallAfter(self.update_row_status, row_idx, f"已完成 -> {out_name}", out_dxf)
+                            wx.CallAfter(self.update_row_status, row_idx, _t("done_row").format(out_name), out_dxf)
                             wx.CallAfter(
                                 self.append_log,
-                                f"[{seq_i}/{total_n}] 成功: {out_dxf} (尺寸标注={st.get('native_dimensions_assembled', 0)}, "
-                                f"块引用={st.get('annotation_blocks_assembled', 0)}, 圆={st.get('circles', 0)}, 圆弧={st.get('arcs', 0)})"
+                                _t("log_ok").format(
+                                    seq_i, total_n, out_dxf,
+                                    st.get('native_dimensions_assembled', 0),
+                                    st.get('annotation_blocks_assembled', 0),
+                                    st.get('circles', 0), st.get('arcs', 0),
+                                )
                             )
                         except Exception as file_ex:
-                            wx.CallAfter(self.update_row_status, row_idx, f"失败: {file_ex}")
-                            wx.CallAfter(self.append_log, f"[{seq_i}/{total_n}] 失败 ({src_path}): {file_ex}")
+                            wx.CallAfter(self.update_row_status, row_idx, _t("failed_row").format(file_ex))
+                            wx.CallAfter(self.append_log, _t("log_fail").format(seq_i, total_n, src_path, file_ex))
                         pct = int(round(seq_i * 100.0 / total_n))
                         wx.CallAfter(self.gauge.SetValue, pct)
 
-                    wx.CallAfter(self._refresh_statusbar, f"转换完成：成功 {ok_cnt}/{total_n} 个文件（时间后缀 _{batch_ts}.dxf）")
+                    wx.CallAfter(self._refresh_statusbar, _t("done_summary").format(ok_cnt, total_n, batch_ts))
                     wx.CallAfter(
                         wx.MessageBox,
-                        f"转换完成！\n成功：{ok_cnt} / {total_n} 个文件\n统一时间后缀：_{batch_ts}.dxf",
-                        "转换完成",
+                        _t("dlg_done").format(ok_cnt, total_n, batch_ts),
+                        _t("dlg_done_title"),
                         wx.OK | wx.ICON_INFORMATION,
                         self,
                     )
                 finally:
-                    wx.CallAfter(self.btn_start.Enable, True)
-                    wx.CallAfter(self.btn_add.Enable, True)
-                    wx.CallAfter(self.btn_add_dir.Enable, True)
-                    wx.CallAfter(self.btn_remove.Enable, True)
-                    wx.CallAfter(self.btn_clear.Enable, True)
+                    wx.CallAfter(self._re_enable_buttons)
 
             threading.Thread(target=worker, daemon=True).start()
 

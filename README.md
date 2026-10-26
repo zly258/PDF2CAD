@@ -31,6 +31,7 @@ exe in one command.
 | Block reuse | Duplicate symbol blocks are normalised and re-instanced via `INSERT`, shrinking the DXF |
 | Hatch regions | Section-hatch areas are detected and reassembled as `HATCH_REGION` |
 | Text recognition | RapidOCR (offline, models bundled, default), PaddleOCR (optional, better on Chinese), or an LLM/VLM endpoint |
+| Bilingual GUI | English (default) / 简体中文, switchable from the "Language" menu; the choice is remembered in `~/.pdf2cad/gui.json` |
 | Scanned / image input | Raster pipeline: Otsu binarisation, morphological skeleton tracing and Hough circle detection; scanned PDFs without vector paths fall back to it automatically |
 
 ### Requirements
@@ -58,7 +59,8 @@ python -m pdf2cad
 Add drawings to the minimalist file list (drag-and-drop, multi-select, files or folders —
 no single/batch switch), then click "Start". Progress and results appear in the log below.
 Generated DXF files get a shared batch timestamp suffix. OCR engine and LLM endpoint live
-under menu "OCR Config".
+under menu "OCR Config". Switch the interface language under menu "Language"
+(English by default; the choice is remembered for the next launch).
 
 **Command line**
 

@@ -63,10 +63,8 @@ pdf2cad/
 
 | File | Contents |
 |------|----------|
-| `PDF2CAD-1.0.0-win64.7z` | Portable Windows build (77 MB, 7z/LZMA2 — 31% smaller than the zip), no Python required. Unpack with [7-Zip](https://www.7-zip.org/) (or any 7z-compatible tool) and run `PDF2CAD.exe`. |
+| `PDF2CAD-1.0.0-win64.7z` | Portable Windows build (77 MB, 7z/LZMA2), no Python required. Unpack with [7-Zip](https://www.7-zip.org/) (or any 7z-compatible tool) and run `PDF2CAD.exe`. |
 | `PDF2CAD-1.0.0-source.7z` | Source code (English `README.md` plus `README.zh-CN.md`). |
-
-Legacy zip versions of both assets are also attached for environments without 7z support.
 
 ## Requirements
 

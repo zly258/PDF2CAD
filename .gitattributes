@@ -1,0 +1,27 @@
+# 统一换行策略：仓库内存 LF，检出时按平台转换，避免 Windows 上反复出现
+# "LF will be replaced by CRLF" 警告与无意义的整文件 diff。
+* text=auto
+
+# 源码与脚本：始终 LF 入库
+*.py    text eol=lf
+*.toml  text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+*.cfg   text eol=lf
+*.yml   text eol=lf
+.gitignore   text eol=lf
+.gitattributes text eol=lf
+
+# 批处理必须在 Windows 上以 CRLF 运行
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# 二进制：禁止任何换行/差异处理
+*.png   binary
+*.ico   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.pdf   binary
+*.onnx  binary
+*.dxf   -text

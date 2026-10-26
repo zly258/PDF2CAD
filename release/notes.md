@@ -5,6 +5,8 @@ Repository: **https://github.com/zly258/PDF2CAD**
 
 ## Highlights
 
+- **Bilingual GUI** — English (default) / 简体中文 switchable from the "Language" menu;
+  the choice is remembered in `~/.pdf2cad/gui.json` and restored on the next launch.
 - **Reference-faithful engine** — the package is split strictly from the reference
   implementation `pdf2cad_pro.py`: each module maps 1:1 to §1–§9 of that script and the
   wxPython GUI is an isomorphic port of its §10. Conversion output is byte-identical

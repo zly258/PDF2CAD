@@ -596,10 +596,10 @@ def launch():
 
             panel.SetSizer(main_sizer)
 
-            # 底部状态栏
-            self.statusbar = self.CreateStatusBar(2)
-            self.statusbar.SetStatusWidths([-3, -2])
-            self._refresh_statusbar(_t("ready"))
+            # 底部状态栏：单字段，仅显示版权信息（整行独占，不再截断）
+            self.statusbar = self.CreateStatusBar(1)
+            self.statusbar.SetStatusWidths([-1])
+            self._refresh_statusbar()
 
             # 绑定事件
             self.Bind(wx.EVT_MENU, self.on_add_files, m_add_files)
@@ -631,7 +631,8 @@ def launch():
 
         # ---------------- 语言切换（立即重建界面，选择持久化） ----------------
         def on_switch_language(self, event):
-            new_lang = "zh" if event.GetEventObject() is self.m_lang_zh else "en"
+            # 菜单事件的 GetEventObject() 不是 wx.MenuItem，必须按菜单项 ID 判别
+            new_lang = "zh" if event.GetId() == self.m_lang_zh.GetId() else "en"
             if new_lang == _STATE["lang"]:
                 return
             if self._converting:
@@ -651,11 +652,9 @@ def launch():
             self.Destroy()
 
         # ---------------- 状态栏与 OCR 快捷切换 ----------------
-        def _refresh_statusbar(self, left_msg=None):
-            if left_msg is not None:
-                self.statusbar.SetStatusText(left_msg, 0)
-            ocr_label = ocr_mode_label(self.cfg.ocr_mode)
-            self.statusbar.SetStatusText(_t("statusbar_right").format(ocr_label, __version__, __copyright__), 1)
+        def _refresh_statusbar(self, *_ignored):
+            # 状态栏固定只显示版权信息；操作提示与进度由文件列表、进度条与日志区承担
+            self.statusbar.SetStatusText(__copyright__, 0)
 
         def set_quick_ocr_mode(self, mode_str):
             self.cfg.ocr_mode = mode_str

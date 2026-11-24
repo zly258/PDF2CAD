@@ -2,6 +2,10 @@
 
 [English](README.md) | [简体中文](#中文)
 
+<p>
+  <a href="https://ifdian.net/order/create?user_id=3db8e630e6dc11f1b37452540025c377"><img src="https://img.shields.io/badge/Sponsor-%E7%88%B1%E5%8F%91%E7%94%B5-946ce6.svg" alt="Sponsor on Afdian" /></a>
+</p>
+
 把打印 / 导出的 **矢量 PDF、扫描件与图像图纸** 转换为可编辑的标准 **CAD (DXF)**，
 自动还原尺寸标注、符号块、工程表格与几何轮廓，中文与工程符号零乱码。
 
@@ -161,6 +165,10 @@ python -m pdf2cad --version           # 冒烟
 本项目采用 **GNU General Public License v3.0** 发布，全文见 [LICENSE](LICENSE)。
 你可以自由使用、修改与再分发，但衍生作品同样必须以 GPL-3.0 开源。
 
+### 打赏支持
+
+如果本项目对你的工作与学习有帮助，欢迎通过 [爱发电 (Afdian)](https://ifdian.net/order/create?user_id=3db8e630e6dc11f1b37452540025c377) 赞助支持作者持续维护！
+
 ### 版权
 
-Copyright (C) 2026 zhangly1403 &lt;zhangly1403@gmail.com&gt;
+Copyright (C) 2026 zhangly1403 &lt;zhangly1403@gmail.com&gt; | [GitHub (zly258)](https://github.com/zly258)

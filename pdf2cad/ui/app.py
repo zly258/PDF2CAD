@@ -265,7 +265,8 @@ def about_text():
             "   剖面填充区域块 (HATCH_REGION) 以及重复符号块定义归一化复用 (BLOCK / INSERT)；\n"
             "3. 几何轮廓高精度重构：自动还原真圆 (CIRCLE)、圆弧/倒圆角 (ARC)、SVD 微线段中心线/圆弧重构；\n"
             "4. 全自动防乱码：内置 ANSI_936 (GBK) 与 txt.shx + gbcbig.shx 国标双字库绑定，中文与工程符号零乱码；\n"
-            "5. 极简统一转换：支持单张或多张图纸统一列表管理，生成 DXF 自动带批次统一时间戳后缀。"
+            "5. 极简统一转换：支持单张或多张图纸统一列表管理，生成 DXF 自动带批次统一时间戳后缀。\n\n"
+            "打赏支持 (爱发电)：https://ifdian.net/order/create?user_id=3db8e630e6dc11f1b37452540025c377"
         )
     return (
         f"Software: {_t('title')}\n"
@@ -283,7 +284,8 @@ def about_text():
         "4. Zero-garbage encoding: ANSI_936 (GBK) with txt.shx + gbcbig.shx national fonts bound,\n"
         "   Chinese and engineering symbols are never garbled;\n"
         "5. Minimal unified workflow: single or batch drawings in one list; generated DXF files share\n"
-        "   a batch timestamp suffix automatically."
+        "   a batch timestamp suffix automatically.\n\n"
+        "Sponsor / Donate (Afdian): https://ifdian.net/order/create?user_id=3db8e630e6dc11f1b37452540025c377"
     )
 
 

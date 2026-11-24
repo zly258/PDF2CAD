@@ -2,6 +2,10 @@
 
 [English](#english) | [简体中文](README.zh-CN.md)
 
+<p>
+  <a href="https://ifdian.net/order/create?user_id=3db8e630e6dc11f1b37452540025c377"><img src="https://img.shields.io/badge/Sponsor-Afdian-946ce6.svg" alt="Sponsor on Afdian" /></a>
+</p>
+
 Convert printed / exported **vector PDFs, scans and image drawings** into editable
 standard **CAD (DXF)**, automatically rebuilding dimensions, annotation blocks,
 engineering tables and geometry — with zero garbled Chinese or engineering symbols.
@@ -171,6 +175,10 @@ Released under the **GNU General Public License v3.0** — see [LICENSE](LICENSE
 You may use, modify and redistribute it freely, but derivative works must also be
 open-sourced under GPL-3.0.
 
+### Sponsor / Donate
+
+If this project helps your workflow, feel free to support the author via [Afdian](https://ifdian.net/order/create?user_id=3db8e630e6dc11f1b37452540025c377).
+
 ### Copyright
 
-Copyright (C) 2026 zhangly1403 &lt;zhangly1403@gmail.com&gt;
+Copyright (C) 2026 zhangly1403 &lt;zhangly1403@gmail.com&gt; | [GitHub (zly258)](https://github.com/zly258)

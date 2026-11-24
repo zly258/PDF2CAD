@@ -788,6 +788,7 @@ def launch():
                 llm_model=self.cfg.llm_model,
                 llm_key=self.cfg.llm_key,
                 user_scale=self.cfg.user_scale,
+                use_lwpolyline=self.cfg.use_lwpolyline,
             )
 
             def worker():

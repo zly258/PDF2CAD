@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdf2cad"
-version = "1.0.0"
+version = "1.1.0"
 description = "打印 PDF 图纸转 DXF：智能识别与原生重绘引擎（中文零乱码 / GBK + gbcbig.shx）"
 readme = "README.md"
 requires-python = ">=3.9"

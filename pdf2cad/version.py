@@ -12,7 +12,7 @@
 # <https://www.gnu.org/licenses/>。
 """版本与版权信息（唯一来源：GUI / CLI / DXF 头共用）。"""
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "zhangly1403"
 __author_email__ = "zhangly1403@gmail.com"
 __license__ = "GPL-3.0"

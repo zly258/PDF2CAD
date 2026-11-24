@@ -34,16 +34,12 @@ def _weld_leader_geometry(polylines_rel, lines_rel, tol=0.6):
     """
     closed_polys = []
     chains = []
-    default_lay = "DIM"
-    default_aci = 3
     for p_lay, p_aci, pts, is_cl in polylines_rel:
-        default_lay, default_aci = p_lay, p_aci
         if is_cl or len(pts) < 2:
             closed_polys.append((p_lay, p_aci, pts, is_cl))
         else:
             chains.append((p_lay, p_aci, list(pts)))
     for l_lay, l_aci, p0, p1 in lines_rel:
-        default_lay, default_aci = l_lay, l_aci
         chains.append((l_lay, l_aci, [p0, p1]))
 
     if len(chains) <= 1:
@@ -1011,7 +1007,6 @@ def assemble_annotation_blocks(
                 continue
             # 检查圆周外侧是否连接单箭头引线 (BALLOON_MARK) 或轴线引线 (AXIS_BUBBLE)
             balloon_polys = []
-            balloon_lines = []
             balloon_solids = []
             for p_idx, (p_lay, p_aci, pts, is_cl) in enumerate(polylines_out):
                 if p_idx not in used_poly_ids and not is_cl and is_pure_dim_or_text_layer(p_lay):

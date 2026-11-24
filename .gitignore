@@ -3,6 +3,7 @@ build/
 dist/
 *.spec.bak
 *.zip
+*.7z
 .venv-build/
 .venv*/
 

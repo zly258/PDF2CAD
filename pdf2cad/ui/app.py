@@ -106,6 +106,7 @@ STR = {
         "lbl_model": "LLM model name:",
         "lbl_key": "LLM API key:",
         "lbl_scale": "Scale (empty = auto 1:1):",
+        "lbl_lwpolyline": "Use LWPOLYLINE (CAD 2000+ compact format)",
         "btn_ok": "Save",
         "btn_cancel": "Cancel",
         "about_title": "About - {0}",
@@ -184,6 +185,7 @@ STR = {
         "lbl_model": "LLM 模型名称：",
         "lbl_key": "LLM 接口秘钥：",
         "lbl_scale": "比例系数 (留空自动1:1)：",
+        "lbl_lwpolyline": "启用 LWPOLYLINE 轻量多段线 (CAD 2000+ 紧凑格式)",
         "btn_ok": "保存设置",
         "btn_cancel": "取消",
         "about_title": "关于 - {0}",
@@ -454,7 +456,11 @@ def launch():
             grid.Add(wx.StaticText(panel, label=_t("lbl_scale")), 0, wx.ALIGN_CENTER_VERTICAL)
             grid.Add(self.txt_scale, 0, wx.ALIGN_LEFT)
 
+            self.chk_lw = wx.CheckBox(panel, label=_t("lbl_lwpolyline"))
+            self.chk_lw.SetValue(bool(getattr(cfg, "use_lwpolyline", False)))
+
             s_llm.Add(grid, 1, wx.EXPAND | wx.ALL, 8)
+            s_llm.Add(self.chk_lw, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
             vbox.Add(s_llm, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 10)
 
             btn_row = wx.BoxSizer(wx.HORIZONTAL)
@@ -500,6 +506,7 @@ def launch():
             self.cfg.llm_url = self.txt_url.GetValue().strip()
             self.cfg.llm_model = self.txt_model.GetValue().strip()
             self.cfg.llm_key = self.txt_key.GetValue().strip()
+            self.cfg.use_lwpolyline = self.chk_lw.GetValue()
             return True
 
     class MainFrame(wx.Frame):

@@ -14,6 +14,7 @@
 import math
 import re
 
+import pdfplumber
 from pypdf import PdfReader
 
 from .annotations import assemble_all_annotations
@@ -35,7 +36,7 @@ from .config import EngineConfig
 from ..version import __version__, __copyright__
 
 
-def _extract_single_pdf_page_entities(pdf_path, reader, page_index: int, cfg: EngineConfig):
+def _extract_single_pdf_page_entities(pdf_path, reader, page_index: int, cfg: EngineConfig, plumber_doc=None):
     page = reader.pages[page_index]
     rotate = int(page.get('/Rotate') or 0) % 360
     mediabox = [float(v) for v in page.mediabox]
@@ -77,7 +78,21 @@ def _extract_single_pdf_page_entities(pdf_path, reader, page_index: int, cfg: En
     contents = page.get_contents()
     if contents is None:
         return None
-    data = contents.get_data().decode('latin1', errors='replace')
+    if hasattr(contents, "get_data"):
+        raw_bytes = contents.get_data()
+    elif isinstance(contents, (list, tuple)) or hasattr(contents, "__iter__"):
+        parts = []
+        for c_obj in contents:
+            if hasattr(c_obj, "get_data"):
+                parts.append(c_obj.get_data())
+            elif hasattr(c_obj, "get_object"):
+                resolved = c_obj.get_object()
+                if hasattr(resolved, "get_data"):
+                    parts.append(resolved.get_data())
+        raw_bytes = b"\n".join(parts)
+    else:
+        raw_bytes = b""
+    data = raw_bytes.decode('latin1', errors='replace')
 
     ctm = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
     ctm_stack = []
@@ -325,7 +340,9 @@ def _extract_single_pdf_page_entities(pdf_path, reader, page_index: int, cfg: En
 
     parse_stream_lines(data)
 
-    pdf_texts_pt = extract_sorted_pdf_texts(pdf_path, bt_records, escaped_slashes, all_strokes_pt, page_index=page_index)
+    pdf_texts_pt = extract_sorted_pdf_texts(
+        pdf_path, bt_records, escaped_slashes, all_strokes_pt, page_index=page_index, plumber_doc=plumber_doc
+    )
 
     # 若当前页为纯扫描件（无矢量笔画且无内嵌文字），返回 None 由上层触发光栅回退
     if len(all_strokes_pt) < 5 and len(pdf_texts_pt) == 0:
@@ -492,56 +509,69 @@ def convert_vector_pdf_to_dxf(pdf_path, out_dxf_path, config: EngineConfig = Non
     scale_from_pt = cfg.user_scale or 1.0
     offset_x_mm = 0.0
 
-    for p_idx in range(num_pages):
-        page_res = _extract_single_pdf_page_entities(pdf_path, reader, p_idx, cfg)
-        if page_res is None:
-            if num_pages == 1:
-                return convert_pdf_page_via_raster_fallback(pdf_path, out_dxf_path, cfg, page_index=0)
-            continue
+    plumber_doc = None
+    try:
+        plumber_doc = pdfplumber.open(pdf_path)
+    except Exception:
+        pass
 
-        scale_from_pt = page_res["scale_from_pt"]
-        all_oc_layers.extend(page_res["oc_layers"])
-        total_absorbed += page_res["absorbed"]
+    try:
+        for p_idx in range(num_pages):
+            page_res = _extract_single_pdf_page_entities(pdf_path, reader, p_idx, cfg, plumber_doc=plumber_doc)
+            if page_res is None:
+                if num_pages == 1:
+                    return convert_pdf_page_via_raster_fallback(pdf_path, out_dxf_path, cfg, page_index=0)
+                continue
 
-        dx = offset_x_mm
-        for lay, aci, p0, p1 in page_res["lines_out"]:
-            lines_out.append((lay, aci, (p0[0] + dx, p0[1]), (p1[0] + dx, p1[1])))
-        for lay, aci, cx, cy, r in page_res["circles_out"]:
-            circles_out.append((lay, aci, cx + dx, cy, r))
-        for lay, aci, cx, cy, r, a0, a1 in page_res["arcs_out"]:
-            arcs_out.append((lay, aci, cx + dx, cy, r, a0, a1))
-        for lay, aci, pts, is_cl in page_res["polylines_out"]:
-            polylines_out.append((lay, aci, [(p[0] + dx, p[1]) for p in pts], is_cl))
-        for lay, aci, pts in page_res["solids_out"]:
-            solids_out.append((lay, aci, [(p[0] + dx, p[1]) for p in pts]))
-        for lay, aci, txt, tx, ty, th, tang in page_res["texts_out"]:
-            texts_out.append((lay, aci, txt, tx + dx, ty, th, tang))
+            scale_from_pt = page_res["scale_from_pt"]
+            all_oc_layers.extend(page_res["oc_layers"])
+            total_absorbed += page_res["absorbed"]
 
-        for d in page_res["dimensions_out"]:
-            d_copy = dict(d)
-            d_copy["block_name"] = f"*D{len(dimensions_out) + 1}"
-            d_copy["t1"] = (d["t1"][0] + dx, d["t1"][1])
-            d_copy["t2"] = (d["t2"][0] + dx, d["t2"][1])
-            d_copy["defpoint1"] = (d["defpoint1"][0] + dx, d["defpoint1"][1])
-            d_copy["defpoint2"] = (d["defpoint2"][0] + dx, d["defpoint2"][1])
-            d_copy["text_mid"] = (d["text_mid"][0] + dx, d["text_mid"][1])
-            d_copy["text_ins"] = (d["text_ins"][0] + dx, d["text_ins"][1])
-            d_copy["arrow1_pts"] = [(p[0] + dx, p[1]) for p in d["arrow1_pts"]]
-            d_copy["arrow2_pts"] = [(p[0] + dx, p[1]) for p in d["arrow2_pts"]]
-            d_copy["dim_lines"] = [((p0[0] + dx, p0[1]), (p1[0] + dx, p1[1])) for p0, p1 in d["dim_lines"]]
-            d_copy["ext_lines"] = [((p0[0] + dx, p0[1]), (p1[0] + dx, p1[1])) for p0, p1 in d["ext_lines"]]
-            d_copy["arcs"] = [(acx + dx, acy, ar, aa0, aa1) for acx, acy, ar, aa0, aa1 in d.get("arcs", [])]
-            d_copy["extra_texts"] = [(et_t, (et_p[0] + dx, et_p[1]), et_h, et_a) for et_t, et_p, et_h, et_a in d.get("extra_texts", [])]
-            dimensions_out.append(d_copy)
+            dx = offset_x_mm
+            for lay, aci, p0, p1 in page_res["lines_out"]:
+                lines_out.append((lay, aci, (p0[0] + dx, p0[1]), (p1[0] + dx, p1[1])))
+            for lay, aci, cx, cy, r in page_res["circles_out"]:
+                circles_out.append((lay, aci, cx + dx, cy, r))
+            for lay, aci, cx, cy, r, a0, a1 in page_res["arcs_out"]:
+                arcs_out.append((lay, aci, cx + dx, cy, r, a0, a1))
+            for lay, aci, pts, is_cl in page_res["polylines_out"]:
+                polylines_out.append((lay, aci, [(p[0] + dx, p[1]) for p in pts], is_cl))
+            for lay, aci, pts in page_res["solids_out"]:
+                solids_out.append((lay, aci, [(p[0] + dx, p[1]) for p in pts]))
+            for lay, aci, txt, tx, ty, th, tang in page_res["texts_out"]:
+                texts_out.append((lay, aci, txt, tx + dx, ty, th, tang))
 
-        for sb in page_res["sym_blocks_out"]:
-            sb_copy = dict(sb)
-            sb_copy["ins_pt"] = (sb["ins_pt"][0] + dx, sb["ins_pt"][1])
-            sym_blocks_out.append(sb_copy)
+            for d in page_res["dimensions_out"]:
+                d_copy = dict(d)
+                d_copy["block_name"] = f"*D{len(dimensions_out) + 1}"
+                d_copy["t1"] = (d["t1"][0] + dx, d["t1"][1])
+                d_copy["t2"] = (d["t2"][0] + dx, d["t2"][1])
+                d_copy["defpoint1"] = (d["defpoint1"][0] + dx, d["defpoint1"][1])
+                d_copy["defpoint2"] = (d["defpoint2"][0] + dx, d["defpoint2"][1])
+                d_copy["text_mid"] = (d["text_mid"][0] + dx, d["text_mid"][1])
+                d_copy["text_ins"] = (d["text_ins"][0] + dx, d["text_ins"][1])
+                d_copy["arrow1_pts"] = [(p[0] + dx, p[1]) for p in d["arrow1_pts"]]
+                d_copy["arrow2_pts"] = [(p[0] + dx, p[1]) for p in d["arrow2_pts"]]
+                d_copy["dim_lines"] = [((p0[0] + dx, p0[1]), (p1[0] + dx, p1[1])) for p0, p1 in d["dim_lines"]]
+                d_copy["ext_lines"] = [((p0[0] + dx, p0[1]), (p1[0] + dx, p1[1])) for p0, p1 in d["ext_lines"]]
+                d_copy["arcs"] = [(acx + dx, acy, ar, aa0, aa1) for acx, acy, ar, aa0, aa1 in d.get("arcs", [])]
+                d_copy["extra_texts"] = [(et_t, (et_p[0] + dx, et_p[1]), et_h, et_a) for et_t, et_p, et_h, et_a in d.get("extra_texts", [])]
+                dimensions_out.append(d_copy)
 
-        page_xs = [p[0] for _, _, p0, p1 in lines_out for p in (p0, p1)] + [p[0] for _, _, pts, _ in polylines_out for p in pts]
-        if page_xs:
-            offset_x_mm = max(page_xs) + 150.0
+            for sb in page_res["sym_blocks_out"]:
+                sb_copy = dict(sb)
+                sb_copy["ins_pt"] = (sb["ins_pt"][0] + dx, sb["ins_pt"][1])
+                sym_blocks_out.append(sb_copy)
+
+            page_xs = [p[0] for _, _, p0, p1 in lines_out for p in (p0, p1)] + [p[0] for _, _, pts, _ in polylines_out for p in pts]
+            if page_xs:
+                offset_x_mm = max(page_xs) + 150.0
+    finally:
+        if plumber_doc is not None:
+            try:
+                plumber_doc.close()
+            except Exception:
+                pass
 
     if not lines_out and not circles_out and not polylines_out and not texts_out:
         return convert_pdf_page_via_raster_fallback(pdf_path, out_dxf_path, cfg, page_index=0)
@@ -558,9 +588,11 @@ def convert_vector_pdf_to_dxf(pdf_path, out_dxf_path, config: EngineConfig = Non
         + ["0"]
     ))
     sym_blocks_out, unique_blk_defs = deduplicate_and_instantiate_block_references(sym_blocks_out)
+    use_lw = getattr(cfg, "use_lwpolyline", False)
     write_standard_dxf(
         out_dxf_path, all_layers, lines_out, circles_out, arcs_out, polylines_out,
-        solids_out, texts_out, dimensions_out, sym_blocks_out
+        solids_out, texts_out, dimensions_out, sym_blocks_out,
+        use_lwpolyline=use_lw
     )
 
     leaders_cnt = sum(1 for sb in sym_blocks_out if sb["block_name"].startswith(("LEADER_MARK", "CALLOUT_MARK", "WELD_MARK")))

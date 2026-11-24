@@ -11,10 +11,60 @@
 # 您应已随本程序收到 GNU 通用公共许可证副本；若无，请见
 # <https://www.gnu.org/licenses/>。
 """标准 DXF 写入器：GBK/ANSI_936 编码 + txt.shx/gbcbig.shx 国标字库绑定与线段去重（参考脚本 §9）。"""
+import math
 import numpy as np
 
 from .encoding import format_cad_text
 from ..version import __version__, __copyright__
+
+
+def write_polyline_entity(wp, lay, aci, pts, is_closed, use_lw=False):
+    """写入优化后的折线图元：过滤相邻重合微小点，2 点开放折线自动降阶为 LINE，支持 LWPOLYLINE 轻量格式。"""
+    clean_pts = []
+    for p in pts:
+        if not clean_pts or math.hypot(p[0] - clean_pts[-1][0], p[1] - clean_pts[-1][1]) > 1e-4:
+            clean_pts.append(p)
+    if len(clean_pts) < 2:
+        return
+    if len(clean_pts) == 2 and not is_closed:
+        wp(0, "LINE")
+        wp(8, lay)
+        wp(62, aci)
+        wp(10, f"{clean_pts[0][0]:.4f}")
+        wp(20, f"{clean_pts[0][1]:.4f}")
+        wp(30, "0.0")
+        wp(11, f"{clean_pts[1][0]:.4f}")
+        wp(21, f"{clean_pts[1][1]:.4f}")
+        wp(31, "0.0")
+        return
+
+    if use_lw:
+        wp(0, "LWPOLYLINE")
+        wp(8, lay)
+        wp(62, aci)
+        wp(90, len(clean_pts))
+        wp(70, 1 if is_closed else 0)
+        for pt in clean_pts:
+            wp(10, f"{pt[0]:.4f}")
+            wp(20, f"{pt[1]:.4f}")
+    else:
+        wp(0, "POLYLINE")
+        wp(8, lay)
+        wp(62, aci)
+        wp(66, 1)
+        wp(10, "0.0")
+        wp(20, "0.0")
+        wp(30, "0.0")
+        wp(70, 1 if is_closed else 0)
+        for pt in clean_pts:
+            wp(0, "VERTEX")
+            wp(8, lay)
+            wp(62, aci)
+            wp(10, f"{pt[0]:.4f}")
+            wp(20, f"{pt[1]:.4f}")
+            wp(30, "0.0")
+        wp(0, "SEQEND")
+        wp(8, lay)
 
 
 def deduplicate_line_pairs(seg_list):
@@ -32,7 +82,8 @@ def deduplicate_line_pairs(seg_list):
 
 def write_standard_dxf(
     out_dxf_path, all_layers, lines_out, circles_out, arcs_out, polylines_out,
-    solids_out, texts_out, dimensions_out=None, sym_blocks_out=None
+    solids_out, texts_out, dimensions_out=None, sym_blocks_out=None,
+    use_lwpolyline=False
 ):
     dimensions_out = dimensions_out or []
     sym_blocks_out = sym_blocks_out or []
@@ -49,7 +100,7 @@ def write_standard_dxf(
         wp(0, "SECTION")
         wp(2, "HEADER")
         wp(9, "$ACADVER")
-        wp(1, "AC1009")
+        wp(1, "AC1015" if use_lwpolyline else "AC1009")
         wp(9, "$DWGCODEPAGE")
         wp(3, "ANSI_936")
         wp(9, "$INSUNITS")
@@ -257,23 +308,7 @@ def write_standard_dxf(
 
             for p_lay, p_aci, pts, is_closed in sb.get('polylines', []):
                 safe_play = format_cad_text(p_lay, for_layer_or_block=True)
-                wp(0, "POLYLINE")
-                wp(8, safe_play)
-                wp(62, p_aci)
-                wp(66, 1)
-                wp(10, "0.0")
-                wp(20, "0.0")
-                wp(30, "0.0")
-                wp(70, 1 if is_closed else 0)
-                for pt in pts:
-                    wp(0, "VERTEX")
-                    wp(8, safe_play)
-                    wp(62, p_aci)
-                    wp(10, f"{pt[0]:.4f}")
-                    wp(20, f"{pt[1]:.4f}")
-                    wp(30, "0.0")
-                wp(0, "SEQEND")
-                wp(8, safe_play)
+                write_polyline_entity(wp, safe_play, p_aci, pts, is_closed, use_lw=use_lwpolyline)
 
             for l_lay, l_aci, lp0, lp1 in sb.get('lines', []):
                 safe_llay = format_cad_text(l_lay, for_layer_or_block=True)
@@ -417,23 +452,7 @@ def write_standard_dxf(
 
         for layer, aci, pts, is_closed in polylines_out:
             lay = format_cad_text(layer, for_layer_or_block=True)
-            wp(0, "POLYLINE")
-            wp(8, lay)
-            wp(62, aci)
-            wp(66, 1)
-            wp(10, "0.0")
-            wp(20, "0.0")
-            wp(30, "0.0")
-            wp(70, 1 if is_closed else 0)
-            for pt in pts:
-                wp(0, "VERTEX")
-                wp(8, lay)
-                wp(62, aci)
-                wp(10, f"{pt[0]:.4f}")
-                wp(20, f"{pt[1]:.4f}")
-                wp(30, "0.0")
-            wp(0, "SEQEND")
-            wp(8, lay)
+            write_polyline_entity(wp, lay, aci, pts, is_closed, use_lw=use_lwpolyline)
 
         for layer, aci, pts in solids_out:
             p0, p1, p2 = pts[0], pts[1], pts[2]

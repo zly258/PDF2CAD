@@ -41,6 +41,7 @@ def main(argv=None):
     parser.add_argument("--llm-url", type=str, default=os.environ.get("LLM_API_URL", "http://localhost:8000/v1/chat/completions"), help="LLM API endpoint URL")
     parser.add_argument("--llm-model", type=str, default=os.environ.get("LLM_MODEL", "deepseek-ai/DeepSeek-OCR"), help="LLM model name")
     parser.add_argument("--llm-key", type=str, default=os.environ.get("LLM_API_KEY", ""), help="LLM API Key")
+    parser.add_argument("--lwpolyline", action="store_true", help="使用现代 DXF R2000 (AC1015) 的 LWPOLYLINE 轻量多段线，显著精简文件体积")
     parser.add_argument("--gui", action="store_true", help="强制启动图形界面")
     args = parser.parse_args(argv)
 
@@ -51,6 +52,7 @@ def main(argv=None):
             llm_model=args.llm_model,
             llm_key=args.llm_key,
             user_scale=args.scale,
+            use_lwpolyline=args.lwpolyline,
         )
         # 兼容 `pdf2cad input.pdf output.dxf` 显式指定输出文件名调用
         if len(args.input) == 2 and os.path.isfile(args.input[0]) and args.input[1].lower().endswith(".dxf") and args.output is None:

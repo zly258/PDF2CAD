@@ -29,7 +29,7 @@ from .encoding import (
 # 4. 原生 PDF 文本提取与基线聚类器（支持表格竖线阻断、空格恢复、重影去重与字高校准）
 # ==============================================================================
 
-def extract_sorted_pdf_texts(pdf_path, bt_records, escaped_slashes=None, all_strokes_pt=None, page_index=0):
+def extract_sorted_pdf_texts(pdf_path, bt_records, escaped_slashes=None, all_strokes_pt=None, page_index=0, plumber_doc=None):
     escaped_slashes = escaped_slashes or []
     all_strokes_pt = all_strokes_pt or []
     out_groups = []
@@ -53,14 +53,18 @@ def extract_sorted_pdf_texts(pdf_path, bt_records, escaped_slashes=None, all_str
         if x_right <= x_left:
             return False
         ym = 0.5 * (c1["f"] + c2["f"])
-        fh = max(c1["font_h"], c2["font_h"])
         for vx, vy0, vy1 in vert_barriers:
             if x_left < vx < x_right and (vy0 + 0.5 <= ym <= vy1 - 0.5):
                 return True
         return False
 
-    with pdfplumber.open(pdf_path) as pdf:
-        p = pdf.pages[min(page_index, len(pdf.pages) - 1)]
+    doc = plumber_doc
+    close_doc = False
+    if doc is None:
+        doc = pdfplumber.open(pdf_path)
+        close_doc = True
+    try:
+        p = doc.pages[min(page_index, len(doc.pages) - 1)]
         char_items = []
         seen_char_pos = set()
 
@@ -216,4 +220,10 @@ def extract_sorted_pdf_texts(pdf_path, bt_records, escaped_slashes=None, all_str
                 "layer": layer,
                 "stream_pos": best_bt[3],
             })
+    finally:
+        if close_doc and doc is not None:
+            try:
+                doc.close()
+            except Exception:
+                pass
     return out_groups

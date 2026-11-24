@@ -19,17 +19,101 @@ from .encoding import is_pure_dim_or_text_layer
 
 
 # ==============================================================================
-# 2. 曲线采样、折线简化、高精度圆/圆弧/圆角拟合与中心线/虚线点云重构引擎
+# 2. 空间网格索引、曲线采样、折线简化、高精度圆/圆弧/圆角拟合与中心线/虚线点云重构引擎
 # ==============================================================================
 
-def cubic_bezier(p0, p1, p2, p3, steps=12):
-    pts = []
-    for i in range(steps + 1):
-        t = i / steps
-        mt = 1.0 - t
-        x = mt**3 * p0[0] + 3 * mt**2 * t * p1[0] + 3 * mt * t**2 * p2[0] + t**3 * p3[0]
-        y = mt**3 * p0[1] + 3 * mt**2 * t * p1[1] + 3 * mt * t**2 * p2[1] + t**3 * p3[1]
-        pts.append((x, y))
+class SpatialGrid2D:
+    """
+    轻量高效的二维空间网格索引（均匀空间哈希网格）：
+    将几何实体按单元格尺寸 cell_size 进行空间桶划分，
+    将近邻搜索从 O(N^2) 降至 O(1)~O(N log N)，大幅提升复杂图纸的几何与标注图块组装性能。
+    """
+    def __init__(self, cell_size=25.0):
+        self.cell_size = max(float(cell_size), 1e-3)
+        self.grid = {}
+
+    def _cell_coords(self, x, y):
+        return int(math.floor(x / self.cell_size)), int(math.floor(y / self.cell_size))
+
+    def insert_point(self, pt, item_id):
+        c = self._cell_coords(pt[0], pt[1])
+        if c not in self.grid:
+            self.grid[c] = []
+        self.grid[c].append(item_id)
+
+    def insert_bbox(self, x_min, y_min, x_max, y_max, item_id):
+        c0 = self._cell_coords(x_min, y_min)
+        c1 = self._cell_coords(x_max, y_max)
+        for cx in range(c0[0], c1[0] + 1):
+            for cy in range(c0[1], c1[1] + 1):
+                key = (cx, cy)
+                if key not in self.grid:
+                    self.grid[key] = []
+                self.grid[key].append(item_id)
+
+    def query_radius(self, x, y, radius):
+        """查询以 (x, y) 为中心、radius 范围内的所有候选 item_id 集合"""
+        c0 = self._cell_coords(x - radius, y - radius)
+        c1 = self._cell_coords(x + radius, y + radius)
+        candidates = set()
+        for cx in range(c0[0], c1[0] + 1):
+            for cy in range(c0[1], c1[1] + 1):
+                cell_items = self.grid.get((cx, cy))
+                if cell_items:
+                    candidates.update(cell_items)
+        return candidates
+
+    def query_bbox(self, x_min, y_min, x_max, y_max):
+        """查询与 [x_min, y_min, x_max, y_max] 相交的所有候选 item_id 集合"""
+        c0 = self._cell_coords(x_min, y_min)
+        c1 = self._cell_coords(x_max, y_max)
+        candidates = set()
+        for cx in range(c0[0], c1[0] + 1):
+            for cy in range(c0[1], c1[1] + 1):
+                cell_items = self.grid.get((cx, cy))
+                if cell_items:
+                    candidates.update(cell_items)
+        return candidates
+
+
+def cubic_bezier(p0, p1, p2, p3, steps=12, flatness_tol=0.03):
+    """
+    三次贝塞尔曲线自适应细分采样：
+    根据平坦度自动递归细分，在大曲率处保证光滑无棱角，平直区域避免产生冗余微线段。
+    """
+    def _is_flat(q0, q1, q2, q3):
+        vx, vy = q3[0] - q0[0], q3[1] - q0[1]
+        l = math.hypot(vx, vy)
+        if l < 1e-4:
+            return True
+        nx, ny = -vy / l, vx / l
+        d1 = abs((q1[0] - q0[0]) * nx + (q1[1] - q0[1]) * ny)
+        d2 = abs((q2[0] - q0[0]) * nx + (q2[1] - q0[1]) * ny)
+        return max(d1, d2) <= flatness_tol
+
+    def _subdivide(q0, q1, q2, q3, depth=0):
+        if depth >= 5 or _is_flat(q0, q1, q2, q3):
+            return [q0, q3]
+        m01 = (0.5 * (q0[0] + q1[0]), 0.5 * (q0[1] + q1[1]))
+        m12 = (0.5 * (q1[0] + q2[0]), 0.5 * (q1[1] + q2[1]))
+        m23 = (0.5 * (q2[0] + q3[0]), 0.5 * (q2[1] + q3[1]))
+        m012 = (0.5 * (m01[0] + m12[0]), 0.5 * (m01[1] + m12[1]))
+        m123 = (0.5 * (m12[0] + m23[0]), 0.5 * (m12[1] + m23[1]))
+        mid = (0.5 * (m012[0] + m123[0]), 0.5 * (m012[1] + m123[1]))
+        left = _subdivide(q0, m01, m012, mid, depth + 1)
+        right = _subdivide(mid, m123, m23, q3, depth + 1)
+        return left[:-1] + right
+
+    pts = _subdivide(p0, p1, p2, p3)
+    if len(pts) < 4:
+        pts = []
+        n_st = max(4, min(steps, 16))
+        for i in range(n_st + 1):
+            t = i / n_st
+            mt = 1.0 - t
+            x = mt**3 * p0[0] + 3 * mt**2 * t * p1[0] + 3 * mt * t**2 * p2[0] + t**3 * p3[0]
+            y = mt**3 * p0[1] + 3 * mt**2 * t * p1[1] + 3 * mt * t**2 * p2[1] + t**3 * p3[1]
+            pts.append((x, y))
     return pts
 
 

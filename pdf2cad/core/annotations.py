@@ -604,14 +604,19 @@ def assemble_all_annotations(solids_pt, all_strokes_pt, pdf_texts_pt, recognizer
             dist_mm = d['dist_pt'] * auto_scale
             if txt and txt.isdigit() and len(scale_ratios) >= 3:
                 val = int(txt)
+                # 仅当疑似文字颠倒（6/9 颠倒识别错误）且替换后与测量距离高度吻合时做安全校正；
+                # 严禁在不吻合时暴力覆盖为 5 的倍数，严格尊重工程图纸的原始标注真实性
                 if abs(val - dist_mm) > max(8.0, 0.03 * dist_mm):
                     alt = txt.replace('6', '9') if val < dist_mm else txt.replace('9', '6')
                     if alt.isdigit() and abs(int(alt) - dist_mm) <= max(8.0, 0.03 * dist_mm):
                         txt = alt
-                    else:
-                        txt = str(int(round(dist_mm / 5.0) * 5)) if dist_mm >= 100 else str(int(round(dist_mm)))
             elif not txt and len(scale_ratios) >= 3:
-                txt = str(int(round(dist_mm / 5.0) * 5)) if dist_mm >= 100 else str(int(round(dist_mm)))
+                # 仅当标注完全缺失文字时，基于标定比例填入实际几何距离（优先整除或保留一位有效小数）
+                rounded_int = int(round(dist_mm))
+                if abs(dist_mm - rounded_int) < 0.08:
+                    txt = str(rounded_int)
+                else:
+                    txt = f"{dist_mm:.1f}".rstrip('0').rstrip('.')
             d['text'] = txt
         native_dimensions.append(d)
 
@@ -674,7 +679,7 @@ def assemble_all_annotations(solids_pt, all_strokes_pt, pdf_texts_pt, recognizer
         is_vert = ch > cw * 1.8
         ang = 90.0 if is_vert else 0.0
         _, rot_s = recognizer.render_strokes_to_pil(strokes_pt, angle_deg=ang)
-        topo_str, unk_cnt, char_boxes = recognizer.segment_and_decode_upright_strokes(rot_s, allow_cjk_fallback=True)
+        topo_str, unk_cnt, char_boxes = recognizer.segment_and_decode_upright_strokes(rot_s)
 
         if (unk_cnt == 0 and len(topo_str) >= 3) or near_shelf:
             full_txt = recognizer.recognize_cluster(strokes_pt, angle_deg=ang)

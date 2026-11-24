@@ -29,3 +29,5 @@ class EngineConfig:
     llm_model: str = os.environ.get("LLM_MODEL", "deepseek-ai/DeepSeek-OCR")
     llm_key: str = os.environ.get("LLM_API_KEY", "")
     user_scale: float = None
+    use_lwpolyline: bool = os.environ.get("DXF_LWPOLYLINE", "0").lower() in ("1", "true", "yes")
+    output_dir: str = None

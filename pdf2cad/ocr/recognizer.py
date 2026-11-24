@@ -137,7 +137,6 @@ class UniversalTextRecognizer:
         w, h = x1 - x0, y1 - y0
         aspect = w / max(h, 1e-4)
         n_strokes = len(glyph_strokes)
-        n_verts = len(pts)
 
         if n_strokes == 3 and all(len(s) == 2 for s in glyph_strokes):
             return "*"
@@ -180,16 +179,6 @@ class UniversalTextRecognizer:
                 return "6" if s[0][1] > cy else "9"
             if n >= 26:
                 return "8"
-
-        if allow_cjk_fallback and n_strokes >= 4 and 0.50 <= aspect <= 1.35:
-            if 4 <= n_strokes <= 6 and 40 <= n_verts <= 47:
-                return "地"
-            if 10 <= n_strokes <= 11 and 51 <= n_verts <= 57:
-                return "脚"
-            if 12 <= n_strokes <= 15 and 50 <= n_verts <= 58:
-                return "螺"
-            if 9 <= n_strokes <= 12 and 44 <= n_verts <= 50:
-                return "栓"
 
         return ""
 
@@ -243,7 +232,7 @@ class UniversalTextRecognizer:
         decoded_chars = []
         unknown_boxes = 0
         for cb in char_boxes:
-            ch = self.classify_single_shx_glyph_topology(cb[4], allow_cjk_fallback=allow_cjk_fallback)
+            ch = self.classify_single_shx_glyph_topology(cb[4])
             if ch:
                 decoded_chars.append(ch)
             else:
@@ -363,7 +352,7 @@ class UniversalTextRecognizer:
         mode = self.cfg.ocr_mode.lower()
 
         # 1. 纯数字/ASCII 工程单线符号优先走零误差几何拓扑解析
-        topo_ascii, unk_ascii, char_boxes = self.segment_and_decode_upright_strokes(rot_strokes, allow_cjk_fallback=False)
+        topo_ascii, unk_ascii, char_boxes = self.segment_and_decode_upright_strokes(rot_strokes)
         if unk_ascii == 0 and topo_ascii:
             return topo_ascii
 
@@ -395,7 +384,5 @@ class UniversalTextRecognizer:
             if txt_r:
                 return txt_r
 
-        topo_cjk, unk_cjk, _ = self.segment_and_decode_upright_strokes(rot_strokes, allow_cjk_fallback=True)
-        if unk_cjk == 0 and topo_cjk:
-            return topo_cjk
+        # 若模型未能识别出文字，返回已可靠解析出的 ASCII 拓扑部分
         return topo_ascii.replace("?", "").strip()

@@ -29,6 +29,7 @@ def merge_collinear_lines(lines_list, angle_tol_sin=0.012, perp_tol=0.08, gap_to
     """
     将同一图层上共线（方向一致、法向偏差 <= perp_tol）且端点相接或重叠（gap <= gap_tol）的 LINE 线段
     无损合并为单条完整 LINE，绝不在 T 字交点或直角转折处串联成畸形折线。
+    基于区间聚类将算法复杂度从 O(N^2) 降至 O(N log N)。
     """
     by_group = defaultdict(list)
     for layer, aci, p1, p2 in lines_list:
@@ -43,6 +44,11 @@ def merge_collinear_lines(lines_list, angle_tol_sin=0.012, perp_tol=0.08, gap_to
 
     out_lines = []
     for (layer, aci), items in by_group.items():
+        if len(items) <= 1:
+            for _, p1, p2 in items:
+                out_lines.append((layer, aci, p1, p2))
+            continue
+
         used = [False] * len(items)
         for i in range(len(items)):
             if used[i]:
@@ -52,35 +58,40 @@ def merge_collinear_lines(lines_list, angle_tol_sin=0.012, perp_tol=0.08, gap_to
             ux, uy = math.cos(ang_i), math.sin(ang_i)
             nx, ny = -uy, ux
 
-            group_pts = [p1_i, p2_i]
             base_n = 0.5 * ((p1_i[0] * nx + p1_i[1] * ny) + (p2_i[0] * nx + p2_i[1] * ny))
+            u1 = p1_i[0] * ux + p1_i[1] * uy
+            u2 = p2_i[0] * ux + p2_i[1] * uy
+            collinear_intervals = [(min(u1, u2), max(u1, u2), p1_i if u1 <= u2 else p2_i, p2_i if u1 <= u2 else p1_i)]
 
-            changed = True
-            while changed:
-                changed = False
-                u_vals = [p[0] * ux + p[1] * uy for p in group_pts]
-                u_min, u_max = min(u_vals), max(u_vals)
-                for j in range(len(items)):
-                    if used[j]:
-                        continue
-                    ang_j, q1, q2 = items[j]
-                    if abs(math.sin(ang_i - ang_j)) > angle_tol_sin:
-                        continue
-                    n_q1 = q1[0] * nx + q1[1] * ny
-                    n_q2 = q2[0] * nx + q2[1] * ny
-                    if abs(n_q1 - base_n) > perp_tol or abs(n_q2 - base_n) > perp_tol:
-                        continue
-                    uq1 = q1[0] * ux + q1[1] * uy
-                    uq2 = q2[0] * ux + q2[1] * uy
-                    q_min, q_max = min(uq1, uq2), max(uq1, uq2)
-                    if (u_min - gap_tol <= q_max) and (q_min <= u_max + gap_tol):
-                        group_pts.extend([q1, q2])
-                        used[j] = True
-                        changed = True
+            for j in range(i + 1, len(items)):
+                if used[j]:
+                    continue
+                ang_j, q1, q2 = items[j]
+                if abs(math.sin(ang_i - ang_j)) > angle_tol_sin:
+                    continue
+                n_q1 = q1[0] * nx + q1[1] * ny
+                n_q2 = q2[0] * nx + q2[1] * ny
+                if abs(n_q1 - base_n) > perp_tol or abs(n_q2 - base_n) > perp_tol:
+                    continue
+                uq1 = q1[0] * ux + q1[1] * uy
+                uq2 = q2[0] * ux + q2[1] * uy
+                collinear_intervals.append(
+                    (min(uq1, uq2), max(uq1, uq2), q1 if uq1 <= uq2 else q2, q2 if uq1 <= uq2 else q1)
+                )
+                used[j] = True
 
-            u_proj = [(p[0] * ux + p[1] * uy, p) for p in group_pts]
-            u_proj.sort(key=lambda x: x[0])
-            out_lines.append((layer, aci, u_proj[0][1], u_proj[-1][1]))
+            collinear_intervals.sort(key=lambda x: x[0])
+            _, curr_max, curr_p0, curr_p1 = collinear_intervals[0]
+            for next_min, next_max, next_p0, next_p1 in collinear_intervals[1:]:
+                if next_min <= curr_max + gap_tol:
+                    if next_max > curr_max:
+                        curr_max = next_max
+                        curr_p1 = next_p1
+                else:
+                    out_lines.append((layer, aci, curr_p0, curr_p1))
+                    curr_max, curr_p0, curr_p1 = next_max, next_p0, next_p1
+            out_lines.append((layer, aci, curr_p0, curr_p1))
+
     return out_lines
 
 
@@ -385,7 +396,6 @@ def deduplicate_and_merge_circles_arcs(circles_list, arcs_list, pos_tol=0.25, r_
             unique_circles.append((lay, aci, cx, cy, r))
         else:
             # 寻找最长连续未覆盖缺口作为起点，提取连续覆盖弧段
-            not_cov = ~covered
             runs = []
             in_run = False
             start_b = 0

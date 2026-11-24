@@ -20,7 +20,7 @@ import pdfplumber
 
 from .contour import merge_collinear_lines
 from .dxf_writer import write_standard_dxf
-from .geometry import fit_circle_or_arc, simplify_collinear_pts
+from .geometry import fit_circle_or_arc, is_degenerate_collinear_loop, simplify_collinear_pts
 from ..ocr.recognizer import UniversalTextRecognizer
 from .config import EngineConfig
 
@@ -102,16 +102,23 @@ def convert_raster_image_to_dxf(img_path, out_dxf_path, config: EngineConfig = N
             except Exception:
                 pass
 
-    skel = np.zeros(bw.shape, np.uint8)
-    element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
-    temp = bw.copy()
-    while True:
-        eroded = cv2.erode(temp, element)
-        dilated = cv2.dilate(eroded, element)
-        skel = cv2.bitwise_or(skel, cv2.subtract(temp, dilated))
-        temp = eroded
-        if cv2.countNonZero(temp) == 0:
-            break
+    skel = None
+    if hasattr(cv2, "ximgproc") and hasattr(cv2.ximgproc, "thinning"):
+        try:
+            skel = cv2.ximgproc.thinning(bw, thinningType=cv2.ximgproc.THINNING_ZHANGSUEN)
+        except Exception:
+            pass
+    if skel is None:
+        skel = np.zeros(bw.shape, np.uint8)
+        element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
+        temp = bw.copy()
+        while True:
+            eroded = cv2.erode(temp, element)
+            dilated = cv2.dilate(eroded, element)
+            skel = cv2.bitwise_or(skel, cv2.subtract(temp, dilated))
+            temp = eroded
+            if cv2.countNonZero(temp) == 0:
+                break
 
     raw_lines, circles_out, arcs_out, polylines_out = [], [], [], []
 
@@ -144,6 +151,15 @@ def convert_raster_image_to_dxf(img_path, out_dxf_path, config: EngineConfig = N
         approx = cv2.approxPolyDP(cnt, 1.5, False)
         pts = [(float(pt[0][0]) * scale, float(h - pt[0][1]) * scale) for pt in approx]
         pts = simplify_collinear_pts(pts, tol=0.5 * scale)
+
+        # 检查是否为骨架描摹产生的往返闭合双重线，若为往返共线则直接提取单根中心线
+        degen = is_degenerate_collinear_loop(pts, tol=1.5 * scale)
+        if degen is not None:
+            p0, p1 = degen
+            if math.hypot(p0[0] - p1[0], p0[1] - p1[1]) > 1.0:
+                raw_lines.append(("MAIN_PLAN", 4, p0, p1))
+            continue
+
         for i in range(1, len(pts)):
             dx = pts[i][0] - pts[i - 1][0]
             dy = pts[i][1] - pts[i - 1][1]
@@ -160,7 +176,11 @@ def convert_raster_image_to_dxf(img_path, out_dxf_path, config: EngineConfig = N
 
     lines_out = merge_collinear_lines(raw_lines, angle_tol_sin=0.02, perp_tol=1.2 * scale, gap_tol=2.5 * scale)
     all_layers = ["0", "MAIN_PLAN", "TEXT"]
-    write_standard_dxf(out_dxf_path, all_layers, lines_out, circles_out, arcs_out, polylines_out, [], texts_out, [], [])
+    use_lw = getattr(cfg, "use_lwpolyline", False)
+    write_standard_dxf(
+        out_dxf_path, all_layers, lines_out, circles_out, arcs_out, polylines_out,
+        [], texts_out, [], [], use_lwpolyline=use_lw
+    )
     return {
         "mode": "raster_image",
         "lines": len(lines_out),

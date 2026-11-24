@@ -198,7 +198,6 @@ def restore_english_spacing(s):
     s = re.sub(r',(?=[A-Za-z])', ', ', s)
     s = re.sub(r'([a-z]{2,})([A-Z][a-z]{2,})', r'\1 \2', s)
     s = re.sub(r'([A-Za-z]{6,})', lambda m: segment_concatenated_english_token(m.group(1)), s)
-    s = re.sub(r'\bCUSTOMER\s+STAR\b', 'STAR', s)
     return s
 
 

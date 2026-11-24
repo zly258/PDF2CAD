@@ -1,107 +1,181 @@
-# PDF2CAD — 打印 PDF 图纸转 DXF
+<h1 align="center">PDF2CAD</h1>
 
-[English](README.md) | [简体中文](#中文)
+<p align="center">将打印的矢量 PDF、扫描件与图像工程图纸转换为可编辑 CAD (DXF)，自动重建原生尺寸标注、符号块并支持 GBK/SHX 国标字库。</p>
 
-<p>
-  <a href="https://ifdian.net/order/create?user_id=3db8e630e6dc11f1b37452540025c377"><img src="https://img.shields.io/badge/Sponsor-%E7%88%B1%E5%8F%91%E7%94%B5-946ce6.svg" alt="Sponsor on Afdian" /></a>
+<p align="center">
+  <a href="./README.md">English</a> | <a href="./README.zh-CN.md">简体中文</a>
 </p>
 
-把打印 / 导出的 **矢量 PDF、扫描件与图像图纸** 转换为可编辑的标准 **CAD (DXF)**，
-自动还原尺寸标注、符号块、工程表格与几何轮廓，中文与工程符号零乱码。
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.9%2B-3776AB?style=flat-square" alt="Python 3.9+"> <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11-4B5563?style=flat-square" alt="Platform: Windows 10/11"> <img src="https://img.shields.io/badge/Version-1.1.0-F59E0B?style=flat-square" alt="Version 1.1.0"> <a href="./LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-22C55E?style=flat-square" alt="License: GPL-3.0"></a>
+</p>
 
-界面（wxPython）与转换引擎（`pdf2cad.core` / `pdf2cad.ocr`）彻底分离，引擎可独立作为库调用；
-文字识别支持 **内置 RapidOCR / 百度 PaddleOCR / LLM** 三条链路，并支持一键打包 Windows exe。
+PDF2CAD 可将打印或导出的矢量 PDF、扫描件 PDF 及光栅图像图纸转换为可编辑的标准 DXF 文件，自动还原尺寸标注、工程符号、表格与几何轮廓。项目将 wxPython 桌面界面（`pdf2cad.ui`）与转换引擎（`pdf2cad.core`、`pdf2cad.ocr`）彻底解耦，既可作为独立 Python 库与命令行工具使用，也支持一键打包为 Windows 独立可执行程序。
 
-> 架构说明：本项目按参考实现 `pdf2cad_pro.py` 的逻辑严格拆分——引擎各模块与该脚本
-> 的 §1–§9 章节一一对应，GUI 为其 §10 wxPython 界面的同构移植，转换结果与参考实现逐字节一致。
+## 核心亮点
 
----
+| 核心能力 | 实际价值 |
+|---|---|
+| 中文与工程符号防乱码 | 采用 GBK（`ANSI_936`）编码并绑定 `txt.shx` / `gbcbig.shx` 国标双字库，GB2312 范围外字符自动转义为 `\U+XXXX`。 |
+| 原生标注与工程符号重建 | 重建线性、对齐、直径、角度 `DIMENSION` 实体，以及焊缝、引出、坡度、标高、粗糙度、形位公差框 (FCF)、基准、工程表格、标题栏与 `HATCH_REGION` 剖面填充。 |
+| 高精度几何拟合与块复用 | 拟合真圆、圆弧、倒圆角与相贯线，基于 SVD 点云重建中心线与圆弧，并对重复符号块归一化后以 `INSERT` 实例化复用。 |
+| 三选一 OCR 与 SHX 拓扑解析 | 纯数字与单线工程字形优先走内置几何拓扑引擎解析，复杂文本支持内置离线 RapidOCR、可选百度 PaddleOCR 或 OpenAI 兼容 LLM/VLM 接口。 |
+| 扫描件自动光栅回退 | 图像输入与无矢量路径的扫描件 PDF 自动走光栅管线，执行 Otsu 二值化、形态学骨架细化与 Hough 圆检测。 |
+| 双语桌面界面与命令行 | 提供支持拖拽的 wxPython 极简界面（英文/简体中文，配置保存在 `~/.pdf2cad/gui.json`），同时提供命令行批量处理与 Python API。 |
 
-## 中文
+## 架构设计
 
-### 功能特性
+入口层（`pdf2cad.cli` 与 `pdf2cad.ui`）仅通过 `core.converter.convert_any_to_dxf` 调用转换引擎。`core/` 与 `ocr/` 不导入 `wx`，可在无界面环境中独立运行或替换为其他 GUI 框架。
 
-| 能力 | 说明 |
-|------|------|
-| 全自动防乱码 | GBK (ANSI_936) 写入 + `txt.shx` / `gbcbig.shx` 国标双字库绑定；GB2312 边界外的字符自动转 `\U+XXXX` |
-| 原生标注重建 | `DIMENSION`（线性 / 对齐 / 直径 / 角度）、焊缝 / 引出 / 坡度 / 标高符号块 |
-| 工程元素覆盖 | 剖切符号、表面粗糙度、形位公差框 (FCF)、基准符号、技术要求块、工程表格与标题栏 |
-| 几何高精度拟合 | 真圆、圆弧 / 倒圆角、相贯线；SVD 微线段点云重建中心线与圆弧 |
-| 块定义复用 | 重复符号块归一化 + `INSERT` 实例化，显著减小 DXF 体积 |
-| 剖面填充 | 剖面线区域识别并重组为 `HATCH_REGION` |
-| 文字识别 | RapidOCR（离线、随包分发，默认）、PaddleOCR（可选，中文更优）、LLM/VLM 接口 |
-| 双语界面 | 英文（默认）/ 简体中文，菜单 Language 一键切换；选择记忆于 `~/.pdf2cad/gui.json`，下次启动自动恢复 |
-| 扫描件 / 图像输入 | 光栅管线：Otsu 二值化、形态学骨架细化与 Hough 圆检测；无矢量路径的 PDF 自动回退至此 |
+```text
+┌─────────────────┐    ┌───────────────────┐    ┌───────────────────────┐    ┌─────────────────┐
+│   Entry Layer   │    │  Dispatch Engine  │    │  Conversion Pipelines │    │   DXF Output    │
+│                 │    │                   │    │                       │    │                 │
+│ pdf2cad.cli     │───▶│ core.converter    │───▶│ core.vector_pdf       │───▶│ core.dxf_writer │
+│ pdf2cad.ui (wx) │    │ convert_any_to_dxf│    │ (geometry, contour,   │    │ + core.encoding │
+│ via convert_api │    │                   │    │  annotations, blocks) │    │ GBK + SHX fonts │
+└─────────────────┘    └───────────────────┘    └───────────────────────┘    └─────────────────┘
+                                 │                          │                         ▲
+                                 │ images                   │ scanned PDF             │
+                                 │                          ▼ fallback                │
+                                 │              ┌───────────────────────┐             │
+                                 └─────────────▶│ core.raster           │─────────────┘
+                                                │ (Otsu, skeleton,      │
+                                                │  Hough circles)       │
+                                                └───────────────────────┘
+                                                            ▲
+                                                            │ OCR / SHX topology
+                                                ┌───────────────────────┐
+                                                │ ocr.recognizer        │
+                                                │ RapidOCR / PaddleOCR  │
+                                                │ / LLM + SHX topology  │
+                                                └───────────────────────┘
+```
 
-### 环境要求
+核心目录说明：
 
-- Python 3.9+
-- Windows 10/11（GUI 与 exe 打包在 Windows 上验证；引擎本身跨平台）
+- `pdf2cad/core/`：转换引擎（`config.py`、`encoding.py`、`geometry.py`、`text_extract.py`、`annotations.py`、`contour.py`、`blocks.py`、`vector_pdf.py`、`raster.py`、`dxf_writer.py`、`converter.py`）。
+- `pdf2cad/ocr/`：`recognizer.py`（`UniversalTextRecognizer`，集成 RapidOCR、PaddleOCR、LLM 与 SHX 拓扑解析）。
+- `pdf2cad/ui/`：wxPython 界面层（`app.py`、`helpers.py`、`convert_api.py`）。
+- `packaging/`：PyInstaller 打包脚本（`build_exe.py`）、配置（`pdf2cad.spec`）与运行期钩子（`runtime_hook.py`）。
 
-### 安装
+## 快速安装
+
+从源码安装运行依赖：
 
 ```bash
 pip install -r requirements.txt
-
-# 可选：百度 PaddleOCR（中文工程图纸识别率更高，体积较大）
-pip install paddleocr paddlepaddle
 ```
 
-### 使用
+可选依赖：
 
-**图形界面**
+```bash
+# 可选：百度 PaddleOCR（中文工程图纸识别率更高，体积较大）
+pip install paddleocr paddlepaddle
+
+# 可选：可编辑安装并附带开发依赖（pyinstaller、pyflakes）
+pip install -e ".[dev]"
+```
+
+**环境要求：**
+
+- Python 3.9 及以上版本。
+- wxPython 桌面界面与 Windows exe 打包在 Windows 10/11 上验证（`win32` 平台自动安装 `wxPython`）；转换引擎（`pdf2cad.core` 与 `pdf2cad.ocr`）本身跨平台。
+
+## 快速开始
+
+不带参数直接启动桌面图形界面：
 
 ```bash
 python -m pdf2cad
 ```
 
-主界面为极简文件列表（支持拖拽与多选添加文件/文件夹，不区分单张或批量），
-点「开始转换」后进度与结果见下方日志。生成的 DXF 自动附加同一批次统一的
-时间戳后缀；OCR 引擎与 LLM 接口在菜单「OCR配置」中调整；界面语言在菜单
-「Language」中一键切换（默认英文，选择自动记忆、下次启动恢复）。
+将 PDF 或图像文件（或整个文件夹）拖入文件列表，点击 **开始转换** 即可。生成的 DXF 文件默认保存在原图同目录下并附加统一批次时间戳后缀（`drawing_YYYYMMDD_HHMMSS.dxf`），转换进度与统计信息显示在下方日志区。
 
-**命令行**
+也可以直接通过命令行转换单个图纸：
 
 ```bash
-# 单个文件（显式输出名）
-python -m pdf2cad 图纸.pdf -o 输出.dxf
-
-# 批量 / 整个目录（自动附加批次时间戳后缀）
-python -m pdf2cad 图纸目录 -o 输出目录
-
-# 接入视觉大模型
-python -m pdf2cad a.pdf --ocr llm \
-    --llm-url http://localhost:8000/v1/chat/completions \
-    --llm-model deepseek-ai/DeepSeek-OCR --llm-key sk-xxx
+python -m pdf2cad drawing.pdf -o out.dxf
 ```
 
-**作为库调用**
+命令执行后会写出 `out.dxf`，并在终端输出包含图元统计信息的 JSON 摘要。
+
+## 命令与 CLI 参数
+
+通过 `pip install -e .` 安装后，除 `python -m pdf2cad` 外，还可直接使用 `pdf2cad` 与 `pdf2cad-gui` 命令入口。
+
+```bash
+# 单文件转换（显式指定输出路径）
+python -m pdf2cad drawing.pdf -o out.dxf
+
+# 目录批量转换（自动附加同一批次 YYYYMMDD_HHMMSS 时间戳后缀）
+python -m pdf2cad drawing_dir -o out_dir
+
+# 输出 DXF R2000 LWPOLYLINE 轻量多段线以减小文件体积
+python -m pdf2cad drawing.pdf -o out.dxf --lwpolyline
+
+# 接入 OpenAI 兼容视觉大模型接口（通过环境变量 LLM_API_KEY 传入密钥）
+python -m pdf2cad drawing.pdf -o out.dxf --ocr llm \
+  --llm-url http://localhost:8000/v1/chat/completions \
+  --llm-model deepseek-ai/DeepSeek-OCR \
+  --llm-key "$LLM_API_KEY"
+```
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `input` | *(无)* | 输入 PDF/图像路径或目录；不提供时启动图形界面。 |
+| `-o`, `--output` | *(无)* | 输出 `.dxf` 文件路径（单文件）或输出目录（批量）。 |
+| `--scale` | `None` | 手动指定比例（毫米/磅）；留空时依据尺寸标注自动 1:1 标定。 |
+| `--ocr` | `rapidocr` | 识别引擎：`rapidocr`、`paddleocr` 或 `llm`（兼容旧别名 `builtin_1`、`builtin_2`、`auto`）。 |
+| `--llm-url` | `$LLM_API_URL` 或 `http://localhost:8000/v1/chat/completions` | OpenAI 兼容对话补全接口地址。 |
+| `--llm-model` | `$LLM_MODEL` 或 `deepseek-ai/DeepSeek-OCR` | 视觉/OCR 模型名称。 |
+| `--llm-key` | `$LLM_API_KEY` | LLM 接口 API 密钥。 |
+| `--lwpolyline` | `False` | 使用 DXF R2000（`AC1015`）`LWPOLYLINE` 替代 `POLYLINE`，显著减小输出体积。 |
+| `--gui` | `False` | 强制启动 wxPython 图形界面。 |
+| `-v`, `--version` | — | 输出版本号与版权信息。 |
+
+### 输出命名规则
+
+在图形界面和命令行批量模式下，同一次转换的所有输出共用同一个时间戳后缀（`<原文件名>_YYYYMMDD_HHMMSS.dxf`），默认写入各自原图所在目录（或在指定 `-o` 目录时写入该目录），避免重复转换互相覆盖。
+
+## Python API
 
 ```python
 import pdf2cad
 
 cfg = pdf2cad.EngineConfig(ocr_mode="rapidocr")
-stats = pdf2cad.convert_any_to_dxf("图纸.pdf", "输出.dxf", config=cfg)
+stats = pdf2cad.convert_any_to_dxf("drawing.pdf", "out.dxf", config=cfg)
 print(stats)
 ```
 
-### 识别方式
+`pdf2cad` 导出的公开接口：
 
-| `--ocr` | 引擎 | 说明 |
-|---------|------|------|
-| `rapidocr`（默认） | RapidOCR + ONNX Runtime | 离线运行，模型随包分发 |
-| `paddleocr` | 百度 PaddleOCR | 中文识别率更高，需自行安装；未安装时自动退回 RapidOCR |
-| `llm` | OpenAI 兼容 / DeepSeek-OCR / Ollama | 只需接口地址、模型名、秘钥 |
+- `EngineConfig`：配置数据类，包含 OCR 模式、LLM 接口参数、`user_scale`、`use_lwpolyline` 与 `output_dir`。
+- `convert_any_to_dxf(input_path, output_dxf_path, config=None)`：按扩展名自动分派 `.pdf` 至矢量管线（含扫描件回退），其余图像分派至光栅管线。
+- `convert_pdf_to_dxf(pdf_path, out_dxf_path, config=None)`：矢量 PDF 转换入口，无矢量路径时自动回退光栅管线。
+- `convert_image_to_dxf(img_path, out_dxf_path, config=None, target_width_mm=841.0)`：光栅图像/扫描件转换入口。
 
-纯数字与工程单线符号优先走内置几何拓扑解析（零误差、不调用模型）；
-兼容旧写法 `builtin_1` / `auto` / `builtin_2`。
+## 配置与打包
 
-### 输出命名
+### OCR 识别模式
 
-同一批次的输出共用同一时间戳后缀：`图纸名_YYYYMMDD_HHMMSS.dxf`，
-统一保存到各原图所在目录，重复转换不会互相覆盖。
+| `--ocr` / `ocr_mode` | 引擎 | 说明 |
+|---|---|---|
+| `rapidocr`（默认） | RapidOCR + ONNX Runtime | 完全离线运行，内置 PP-OCRv4 模型随包分发。 |
+| `paddleocr` | 百度 PaddleOCR | 需额外安装（`pip install paddleocr paddlepaddle`）；未安装时自动退回 RapidOCR。 |
+| `llm` | OpenAI 兼容 / DeepSeek-OCR / Ollama | 仅依赖标准库 `urllib`，通过参数或环境变量配置接口地址、模型名与密钥。 |
 
-### 打包 exe
+纯数字与工程单线字形优先由内置几何拓扑解析器直接识别，无需调用 OCR 模型。
+
+### 环境变量与界面配置
+
+- `OCR_MODE`：`EngineConfig.ocr_mode` 默认值（默认 `rapidocr`）。
+- `LLM_API_URL`、`LLM_MODEL`、`LLM_API_KEY`：LLM 接口默认配置。
+- `DXF_LWPOLYLINE`：设为 `1`、`true` 或 `yes` 时默认启用 `LWPOLYLINE` 输出。
+- `PDF2CAD_SMOKE_PDF`：可选，指定 `packaging/build_exe.py` 打包后进行端到端冒烟测试的示例图纸路径。
+- `~/.pdf2cad/gui.json`：记录图形界面偏好，包括界面语言（`Language` 菜单，默认英文）与 OCR 配置（`OCR配置` 菜单）。
+
+### 打包 Windows 可执行程序
 
 ```bash
 python -m venv .venv-build
@@ -109,66 +183,22 @@ python -m venv .venv-build
 .venv-build\Scripts\python packaging\build_exe.py
 ```
 
-产物 `dist/PDF2CAD/PDF2CAD.exe`（约 240 MB，含 OCR 模型），双击即用，目标机无需 Python。
-`build_exe.py` 会先做环境体检，构建后自动校验产物并执行一次真实图纸端到端冒烟。
+构建产物位于 `dist/PDF2CAD/PDF2CAD.exe`（单目录分发，含 OCR 模型约 240 MB），目标机无需安装 Python 即可双击运行。`build_exe.py` 同时支持 `--check`（仅环境体检）与 `--clean-only`（仅清理构建产物）。
 
-### 项目结构
-
-```
-PDF2DXF/
-├─ pdf2cad/                     # 主包（引擎不依赖 GUI 框架）
-│  ├─ version.py                #   版本与版权（唯一来源）
-│  ├─ cli.py                    #   命令行入口（无参数自动进 GUI）
-│  ├─ core/                     #   转换引擎（对应参考脚本 §1–§9）
-│  │  ├─ config.py              #     EngineConfig
-│  │  ├─ encoding.py            #     §1 矩阵/颜色/GB2312 边界/防乱码编码器
-│  │  ├─ geometry.py            #     §2 圆/圆弧/倒圆角拟合、共线化简
-│  │  ├─ text_extract.py        #     §4 PDF 原生文本基线聚类
-│  │  ├─ annotations.py         #     §5 DIMENSION 组装
-│  │  ├─ contour.py             #     §6a 轮廓优化、虚线/中心线点云重建
-│  │  ├─ blocks.py              #     §6b 焊缝/表格/剖面填充/INSERT 复用
-│  │  ├─ vector_pdf.py          #     §7 PDF 内容流解析主流程
-│  │  ├─ raster.py              #     §8 扫描件/图像矢量化管线
-│  │  ├─ dxf_writer.py          #     §9 DXF 写入（GBK + 国标字库）
-│  │  └─ converter.py           #     统一入口 convert_any_to_dxf
-│  ├─ ocr/                      #   文字识别（对应参考脚本 §3）
-│  │  └─ recognizer.py          #     UniversalTextRecognizer：RapidOCR/PaddleOCR/LLM + SHX 拓扑
-│  └─ ui/                       #   界面层（对应参考脚本 §10，wxPython）
-│     ├─ app.py                 #     主窗口（文件列表 + 一键开始转换）
-│     ├─ helpers.py             #     目录扫描/时间戳命名/DPI/打开目录
-│     └─ convert_api.py         #     引擎转发薄层
-├─ packaging/                   # 打包（spec / build_exe / runtime_hook）
-├─ app.py                       # PyInstaller 入口
-├─ pyproject.toml               # 安装与元数据
-├─ requirements.txt
-├─ LICENSE
-└─ README.md / README.zh-CN.md
-```
-
-**分层规则**：`core/` 与 `ocr/` 不得 import wx；
-`ui/` 只通过 `core.converter` 调用引擎，可替换为其它 GUI 框架而不动引擎。
-
-### 开发
+### 开发检查
 
 ```bash
-pip install -e ".[dev]"
-
-python -m pyflakes pdf2cad app.py     # 静态检查
-python -m pdf2cad --version           # 冒烟
+python -m pyflakes pdf2cad app.py
+python -m pdf2cad --version
 ```
 
-打包脚本 `packaging/build_exe.py` 自带环境体检、产物校验与一次真实图纸端到端冒烟；
-冒烟所用图纸可用环境变量 `PDF2CAD_SMOKE_PDF` 指定。
+## 社区与支持
 
-### 许可证
+- 源码仓库与问题反馈：[zly258/PDF2CAD](https://github.com/zly258/PDF2CAD)
+- 赞助支持作者：[爱发电 (Afdian)](https://ifdian.net/order/create?user_id=3db8e630e6dc11f1b37452540025c377)
 
-本项目采用 **GNU General Public License v3.0** 发布，全文见 [LICENSE](LICENSE)。
-你可以自由使用、修改与再分发，但衍生作品同样必须以 GPL-3.0 开源。
+## 许可证
 
-### 打赏支持
+本项目基于 **GNU General Public License v3.0** 开源发布，完整条款见 [LICENSE](./LICENSE)。
 
-如果本项目对你的工作与学习有帮助，欢迎通过 [爱发电 (Afdian)](https://ifdian.net/order/create?user_id=3db8e630e6dc11f1b37452540025c377) 赞助支持作者持续维护！
-
-### 版权
-
-Copyright (C) 2026 zhangly1403 &lt;zhangly1403@gmail.com&gt; | [GitHub (zly258)](https://github.com/zly258)
+Copyright (C) 2026 zhangly1403 <zhangly1403@gmail.com>
